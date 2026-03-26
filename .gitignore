@@ -1,0 +1,14 @@
+# Binary
+oapi-liteclient
+oapi-liteclient.exe
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test output
+testdata/output/

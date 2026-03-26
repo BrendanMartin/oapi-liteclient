@@ -1,0 +1,307 @@
+openapi: "3.0.3"
+info:
+  title: Complex Test API
+  version: "2.0.0"
+servers:
+  - url: https://api.example.com
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Address:
+      type: object
+      required:
+        - street
+        - city
+      properties:
+        street:
+          type: string
+        city:
+          type: string
+        zip_code:
+          type: string
+        country:
+          type: string
+    User:
+      type: object
+      required:
+        - id
+        - email
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        display_name:
+          type: string
+        address:
+          $ref: "#/components/schemas/Address"
+        tags:
+          type: array
+          items:
+            type: string
+        scores:
+          type: array
+          items:
+            type: number
+        is_active:
+          type: boolean
+    UserCreate:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+        display_name:
+          type: string
+        address:
+          $ref: "#/components/schemas/Address"
+    Order:
+      type: object
+      required:
+        - id
+        - user_id
+        - status
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        status:
+          type: string
+        total_amount:
+          type: number
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/OrderItem"
+    OrderItem:
+      type: object
+      required:
+        - product_name
+        - quantity
+        - price
+      properties:
+        product_name:
+          type: string
+        quantity:
+          type: integer
+        price:
+          type: number
+    # All fields optional
+    SearchFilters:
+      type: object
+      properties:
+        query:
+          type: string
+        min_price:
+          type: number
+        max_price:
+          type: number
+        in_stock:
+          type: boolean
+    # Python reserved words as field names
+    Metadata:
+      type: object
+      required:
+        - type
+        - class
+      properties:
+        type:
+          type: string
+        class:
+          type: string
+        from:
+          type: string
+        import:
+          type: string
+        global:
+          type: boolean
+security:
+  - BearerAuth: []
+paths:
+  /users:
+    get:
+      operationId: listUsers
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: is_active
+          in: query
+          required: true
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+    post:
+      operationId: createUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserCreate"
+      responses:
+        "201":
+          description: Created user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+  /users/{userId}:
+    get:
+      operationId: getUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: A user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    put:
+      operationId: updateUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserCreate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+    delete:
+      operationId: deleteUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: User deleted
+  /users/{userId}/orders:
+    get:
+      operationId: listUserOrders
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User's orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+  /orders/{orderId}/items/{itemId}:
+    get:
+      operationId: getOrderItem
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: A single order item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderItem"
+  /search:
+    post:
+      operationId: search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchFilters"
+      responses:
+        "200":
+          description: Search results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+  /metadata:
+    get:
+      operationId: getMetadata
+      responses:
+        "200":
+          description: Metadata with reserved word fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Metadata"
+  /health:
+    get:
+      operationId: healthCheck
+      responses:
+        "200":
+          description: Health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+  # Endpoint with no operationId
+  /ping:
+    get:
+      responses:
+        "200":
+          description: Pong
