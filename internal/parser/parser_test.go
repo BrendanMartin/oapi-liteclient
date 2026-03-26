@@ -42,8 +42,8 @@ func TestParsePetstore(t *testing.T) {
 	if pet == nil {
 		t.Fatal("Pet model not found")
 	}
-	if len(pet.Fields) != 4 {
-		t.Errorf("Pet has %d fields, want 4", len(pet.Fields))
+	if len(pet.Fields) != 5 {
+		t.Errorf("Pet has %d fields, want 5", len(pet.Fields))
 	}
 
 	idField := findField(pet.Fields, "id")

@@ -1,7 +1,7 @@
 version: 2
 
 builds:
-  - main: ./cmd
+  - main: ./cmd/oapi-liteclient
     binary: oapi-liteclient
     env:
       - CGO_ENABLED=0

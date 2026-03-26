@@ -11,9 +11,9 @@ type Spec struct {
 
 // Auth describes the API's authentication scheme.
 type Auth struct {
-	Type   AuthType
-	Name   string // header or query param name (e.g. "X-API-Key", "Authorization")
-	In     string // "header" or "query"
+	Type AuthType
+	Name string // header or query param name (e.g. "X-API-Key", "Authorization")
+	In   string // "header" or "query"
 }
 
 type AuthType int
@@ -32,16 +32,18 @@ type Model struct {
 // Field is a single property on a model.
 type Field struct {
 	Name     string
+	Alias    string // original spec name, set when it differs from Name (e.g. reserved words)
 	Type     Type
 	Required bool
+	Default  *string // nil means no default; pointer to the string representation
 }
 
 // Type represents a data type in the IR.
 type Type struct {
-	Kind    TypeKind
-	Prim    PrimKind // set when Kind == TypePrimitive
-	Elem    *Type    // set when Kind == TypeArray
-	Ref     string   // model name, set when Kind == TypeRef
+	Kind TypeKind
+	Prim PrimKind // set when Kind == TypePrimitive
+	Elem *Type    // set when Kind == TypeArray
+	Ref  string   // model name, set when Kind == TypeRef
 }
 
 type TypeKind int
@@ -64,11 +66,13 @@ const (
 // Endpoint is a single API operation.
 type Endpoint struct {
 	OperationID  string
+	Summary      string // short description from spec
+	Description  string // longer description from spec
 	Method       string // GET, POST, PUT, DELETE, PATCH
 	Path         string // e.g. /pets/{petId}
 	Params       []Param
-	RequestBody  *Type  // nil if no body
-	ResponseType *Type  // nil if no response body (e.g. 204)
+	RequestBody  *Type // nil if no body
+	ResponseType *Type // nil if no response body (e.g. 204)
 }
 
 // Param is a path or query parameter.

@@ -39,7 +39,7 @@ func loadSpec(specPath string) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode != http.StatusOK {
 			return nil, fmt.Errorf("HTTP %d fetching spec", resp.StatusCode)
 		}
@@ -54,7 +54,7 @@ func buildIR(model *libopenapi.DocumentModel[v3.Document]) *ir.Spec {
 	}
 
 	// Base URL from first server
-	if model.Model.Servers != nil && len(model.Model.Servers) > 0 {
+	if len(model.Model.Servers) > 0 {
 		spec.BaseURL = model.Model.Servers[0].URL
 	}
 
@@ -129,6 +129,7 @@ func buildModel(name string, schema *base.Schema) ir.Model {
 				Name:     fieldName,
 				Type:     schemaToType(fieldProxy),
 				Required: requiredSet[fieldName],
+				Default:  extractDefault(fieldSchema),
 			}
 			m.Fields = append(m.Fields, f)
 		}
@@ -197,6 +198,8 @@ func buildEndpoints(path string, pathItem *v3.PathItem) []ir.Endpoint {
 		}
 		ep := ir.Endpoint{
 			OperationID: op.OperationId,
+			Summary:     op.Summary,
+			Description: op.Description,
 			Method:      method,
 			Path:        path,
 		}
@@ -253,6 +256,17 @@ func buildEndpoints(path string, pathItem *v3.PathItem) []ir.Endpoint {
 	}
 
 	return endpoints
+}
+
+func extractDefault(schema *base.Schema) *string {
+	if schema.Default == nil {
+		return nil
+	}
+	val := schema.Default.Value
+	if val == "" {
+		return nil
+	}
+	return &val
 }
 
 func boolVal(b *bool) bool {

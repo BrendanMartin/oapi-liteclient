@@ -18,7 +18,7 @@ func TestPyName(t *testing.T) {
 		{"display_name", "display_name"},
 		{"isActive", "is_active"},
 		{"HTMLParser", "htmlparser"}, // consecutive caps stay together
-		{"getURL", "get_url"},       // consecutive caps stay together
+		{"getURL", "get_url"},        // consecutive caps stay together
 	}
 	for _, tt := range tests {
 		got := pyName(tt.in)
@@ -111,21 +111,21 @@ func TestGeneratePythonMinimal(t *testing.T) {
 		},
 	}
 
-	output, err := GeneratePython(spec)
+	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic"})
 	if err != nil {
 		t.Fatalf("GeneratePython: %v", err)
 	}
 
 	// Check key parts are present
 	checks := []string{
-		"class Item:",
+		"class Item(BaseModel):",
 		"id: int",
 		"name: str",
 		"price: Optional[float] = None",
 		"def get_item(",
 		"item_id: int",
 		`f"/items/{item_id}"`,
-		"return Item(**resp.json())",
+		"return Item.model_validate(resp.json())",
 		"class APIError(Exception):",
 		"class Client:",
 	}
@@ -144,35 +144,162 @@ func TestGeneratePythonNoAuth(t *testing.T) {
 		},
 	}
 
-	output, err := GeneratePython(spec)
+	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic", Auth: "none"})
 	if err != nil {
 		t.Fatalf("GeneratePython: %v", err)
 	}
 
 	if strings.Contains(output, "api_key") || strings.Contains(output, "bearer_token") {
-		t.Error("output should not contain auth params when spec has no auth")
+		t.Error("output should not contain auth params for none mode")
+	}
+	if strings.Contains(output, "self._auth") {
+		t.Error("output should not contain auth logic for none mode")
+	}
+	if strings.Contains(output, "from collections.abc import Callable") {
+		t.Error("output should not import Callable for none mode")
 	}
 }
 
-func TestGeneratePythonBearerAuth(t *testing.T) {
+func TestGeneratePythonAuthCallable(t *testing.T) {
 	spec := &ir.Spec{
-		Title: "Bearer API",
-		Auth:  &ir.Auth{Type: ir.AuthBearer, Name: "Authorization", In: "header"},
+		Title: "Auth API",
 		Endpoints: []ir.Endpoint{
 			{OperationID: "ping", Method: "GET", Path: "/ping"},
 		},
 	}
 
-	output, err := GeneratePython(spec)
+	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic", Auth: "custom"})
 	if err != nil {
 		t.Fatalf("GeneratePython: %v", err)
 	}
 
-	if !strings.Contains(output, "bearer_token") {
-		t.Error("output should contain bearer_token param")
+	if !strings.Contains(output, "auth: Callable[[], dict[str, str]] | None = None") {
+		t.Error("output should have auth callable parameter")
 	}
-	if !strings.Contains(output, `f"Bearer {bearer_token}"`) {
-		t.Error("output should set Authorization header with bearer token")
+	if !strings.Contains(output, "self._auth = auth") {
+		t.Error("output should store auth callable")
+	}
+	if !strings.Contains(output, "self._auth()") {
+		t.Error("output should call auth callable in _request")
+	}
+	if !strings.Contains(output, "from collections.abc import Callable") {
+		t.Error("output should import Callable for custom auth mode")
+	}
+}
+
+func TestGeneratePythonAuthBearerToken(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Bearer API",
+		Endpoints: []ir.Endpoint{
+			{OperationID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+
+	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic", Auth: "bearer-token"})
+	if err != nil {
+		t.Fatalf("GeneratePython: %v", err)
+	}
+
+	if !strings.Contains(output, "bearer_token: str = \"\"") {
+		t.Error("output should have bearer_token parameter")
+	}
+	if !strings.Contains(output, "self._bearer_token = bearer_token") {
+		t.Error("output should store bearer_token")
+	}
+	if !strings.Contains(output, `headers["Authorization"] = f"Bearer {self._bearer_token}"`) {
+		t.Error("output should set Authorization header in _request")
+	}
+	if strings.Contains(output, "from collections.abc import Callable") {
+		t.Error("output should not import Callable for bearer-token mode")
+	}
+}
+
+func TestGeneratePythonAuthAPIKey(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "API Key API",
+		Endpoints: []ir.Endpoint{
+			{OperationID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+
+	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic", Auth: "api-key"})
+	if err != nil {
+		t.Fatalf("GeneratePython: %v", err)
+	}
+
+	if !strings.Contains(output, "api_key: str = \"\"") {
+		t.Error("output should have api_key parameter")
+	}
+	if !strings.Contains(output, `api_key_header: str = "X-API-Key"`) {
+		t.Error("output should have api_key_header parameter")
+	}
+	if !strings.Contains(output, "self._api_key = api_key") {
+		t.Error("output should store api_key")
+	}
+	if !strings.Contains(output, "headers[self._api_key_header] = self._api_key") {
+		t.Error("output should set API key header in _request")
+	}
+}
+
+func TestGeneratePythonAuthGCPIDToken(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "GCP API",
+		Endpoints: []ir.Endpoint{
+			{OperationID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+
+	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic", Auth: "gcp-id-token"})
+	if err != nil {
+		t.Fatalf("GeneratePython: %v", err)
+	}
+
+	if !strings.Contains(output, "import time") {
+		t.Error("output should import time for gcp-id-token mode")
+	}
+	if !strings.Contains(output, "import google.auth.transport.requests") {
+		t.Error("output should import google.auth.transport.requests")
+	}
+	if !strings.Contains(output, "import google.oauth2.id_token") {
+		t.Error("output should import google.oauth2.id_token")
+	}
+	if !strings.Contains(output, "self._token: str | None = None") {
+		t.Error("output should initialize _token field")
+	}
+	if !strings.Contains(output, "self._token_expiry: float = 0") {
+		t.Error("output should initialize _token_expiry field")
+	}
+	if !strings.Contains(output, "def _get_auth_headers(self)") {
+		t.Error("output should have _get_auth_headers method")
+	}
+	if !strings.Contains(output, "self._token_expiry = now + 3300") {
+		t.Error("output should cache token for 3300 seconds")
+	}
+	if !strings.Contains(output, "headers.update(self._get_auth_headers())") {
+		t.Error("output should call _get_auth_headers in _request")
+	}
+	if strings.Contains(output, "from collections.abc import Callable") {
+		t.Error("output should not import Callable for gcp-id-token mode")
+	}
+}
+
+func TestGeneratePythonAuthDefaultIsNone(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Default API",
+		Endpoints: []ir.Endpoint{
+			{OperationID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+
+	// Empty Auth should default to "none"
+	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic"})
+	if err != nil {
+		t.Fatalf("GeneratePython: %v", err)
+	}
+
+	if strings.Contains(output, "self._auth") || strings.Contains(output, "bearer_token") ||
+		strings.Contains(output, "api_key") || strings.Contains(output, "_get_auth_headers") {
+		t.Error("default (empty) auth should produce no auth code")
 	}
 }
 
@@ -192,13 +319,13 @@ func TestGeneratePythonArrayResponse(t *testing.T) {
 		},
 	}
 
-	output, err := GeneratePython(spec)
+	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic"})
 	if err != nil {
 		t.Fatalf("GeneratePython: %v", err)
 	}
 
-	if !strings.Contains(output, "[Pet(**item) for item in resp.json()]") {
-		t.Error("array of refs should deserialize with list comprehension")
+	if !strings.Contains(output, "[Pet.model_validate(item) for item in resp.json()]") {
+		t.Error("array of refs should deserialize with model_validate")
 	}
 }
 
@@ -215,7 +342,7 @@ func TestGeneratePythonArrayOfPrimitivesResponse(t *testing.T) {
 		},
 	}
 
-	output, err := GeneratePython(spec)
+	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic"})
 	if err != nil {
 		t.Fatalf("GeneratePython: %v", err)
 	}
@@ -244,7 +371,7 @@ func TestGeneratePythonRequiredQueryParams(t *testing.T) {
 		},
 	}
 
-	output, err := GeneratePython(spec)
+	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic"})
 	if err != nil {
 		t.Fatalf("GeneratePython: %v", err)
 	}

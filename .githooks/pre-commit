@@ -1,0 +1,39 @@
+#!/bin/bash
+
+echo "Running pre-commit checks..."
+
+# Format check
+unformatted=$(gofmt -l .)
+if [ -n "$unformatted" ]; then
+    echo "FAIL: gofmt"
+    echo "$unformatted"
+    exit 1
+fi
+
+# Fix
+if ! go fix ./...; then
+    echo "FAIL: go fix"
+    exit 1
+fi
+
+# Vet
+if ! go vet ./...; then
+    echo "FAIL: go vet"
+    exit 1
+fi
+
+# Lint
+if command -v golangci-lint &> /dev/null; then
+    if ! golangci-lint run ./...; then
+        echo "FAIL: golangci-lint"
+        exit 1
+    fi
+fi
+
+# Tests
+if ! go test ./...; then
+    echo "FAIL: tests"
+    exit 1
+fi
+
+echo "All checks passed."

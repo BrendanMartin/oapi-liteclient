@@ -13,6 +13,8 @@ import (
 func main() {
 	spec := flag.String("spec", "", "Path or URL to OpenAPI spec (YAML or JSON)")
 	lang := flag.String("lang", "python", "Target language (python)")
+	style := flag.String("style", "pydantic", "Model style for Python: pydantic (default) or dataclass")
+	auth := flag.String("auth", "none", "Auth strategy: none, custom, bearer-token, gcp-id-token, api-key")
 	out := flag.String("out", "./client", "Output directory")
 	flag.Parse()
 
@@ -33,7 +35,8 @@ func main() {
 
 	switch *lang {
 	case "python":
-		output, err = generator.GeneratePython(irSpec)
+		opts := generator.PythonOptions{Style: *style, Auth: *auth}
+		output, err = generator.GeneratePython(irSpec, opts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
@@ -53,6 +56,14 @@ func main() {
 	if err := os.WriteFile(outPath, []byte(output), 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "error writing output: %v\n", err)
 		os.Exit(1)
+	}
+
+	// Write __init__.py for Python packages
+	if *lang == "python" {
+		if err := os.WriteFile(filepath.Join(*out, "__init__.py"), []byte(""), 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "error writing __init__.py: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	fmt.Printf("Generated %s\n", outPath)

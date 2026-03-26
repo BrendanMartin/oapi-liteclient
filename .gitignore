@@ -1,6 +1,6 @@
 # Binary
-oapi-liteclient
-oapi-liteclient.exe
+/oapi-liteclient
+/oapi-liteclient.exe
 
 # IDE
 .idea/
@@ -11,4 +11,6 @@ oapi-liteclient.exe
 Thumbs.db
 
 # Test output
-testdata/output/
+testdata/output*/
+
+docs/
