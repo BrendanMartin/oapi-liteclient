@@ -1,6 +1,8 @@
 package generator
 
 import (
+	"go/format"
+	"strings"
 	"testing"
 
 	"github.com/brendanmartin/oapi-liteclient/internal/ir"
@@ -95,6 +97,91 @@ func TestGoFmtPath(t *testing.T) {
 			if gotArgs[i] != tt.wantArgs[i] {
 				t.Errorf("goFmtPath(%q) args[%d] = %q, want %q", tt.in, i, gotArgs[i], tt.wantArgs[i])
 			}
+		}
+	}
+}
+
+func TestGenerateGoModels(t *testing.T) {
+	spec := &ir.Spec{
+		Title:   "Test API",
+		BaseURL: "https://api.test.com",
+		Models: []ir.Model{
+			{
+				Name: "Pet",
+				Fields: []ir.Field{
+					{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true},
+					{Name: "name", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true},
+					{Name: "tag", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: false},
+					{Name: "vaccinated", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimBool}, Required: false},
+				},
+			},
+		},
+	}
+
+	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "petstore"})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	if _, err := format.Source([]byte(output)); err != nil {
+		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
+	}
+
+	checks := []string{
+		"package petstore",
+		"type Pet struct {",
+		"type APIError struct {",
+		"StatusCode int",
+		"func (e *APIError) Error() string {",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("output missing %q\n\nFull output:\n%s", check, output)
+		}
+	}
+}
+
+func TestGenerateGoNestedModels(t *testing.T) {
+	spec := &ir.Spec{
+		Title:   "Test API",
+		BaseURL: "https://api.test.com",
+		Models: []ir.Model{
+			{
+				Name: "Address",
+				Fields: []ir.Field{
+					{Name: "street", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true},
+					{Name: "city", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true},
+				},
+			},
+			{
+				Name: "User",
+				Fields: []ir.Field{
+					{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true},
+					{Name: "address", Type: ir.Type{Kind: ir.TypeRef, Ref: "Address"}, Required: false},
+					{Name: "tags", Type: ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}}, Required: false},
+					{Name: "scores", Type: ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimFloat}}, Required: false},
+				},
+			},
+		},
+	}
+
+	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "testapi"})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	if _, err := format.Source([]byte(output)); err != nil {
+		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
+	}
+
+	checks := []string{
+		"Address *Address",
+		"Tags    *[]string",
+		"Scores  *[]float64",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("output missing %q\n\nFull output:\n%s", check, output)
 		}
 	}
 }
