@@ -185,3 +185,42 @@ func TestGenerateGoNestedModels(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateGoClientNoAuth(t *testing.T) {
+	spec := &ir.Spec{
+		Title:   "Test API",
+		BaseURL: "https://api.test.com",
+		Endpoints: []ir.Endpoint{
+			{OperationID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+
+	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "testapi"})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	if _, err := format.Source([]byte(output)); err != nil {
+		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
+	}
+
+	checks := []string{
+		"type Client struct {",
+		"baseURL    string",
+		"httpClient *http.Client",
+		"func NewClient(baseURL string, httpClient *http.Client) *Client {",
+		"http.DefaultClient",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("output missing %q\n\nFull output:\n%s", check, output)
+		}
+	}
+
+	noChecks := []string{"bearerToken", "apiKey", "authFunc", "idtoken"}
+	for _, check := range noChecks {
+		if strings.Contains(output, check) {
+			t.Errorf("output should not contain %q for no-auth mode", check)
+		}
+	}
+}
