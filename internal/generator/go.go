@@ -185,6 +185,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 {{- if eq .AuthMode "gcp-id-token"}}
 	"google.golang.org/api/idtoken"
@@ -330,7 +331,144 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}) 
 	}
 	return resp, nil
 }
+{{range .Endpoints}}
+{{- $opName := goName .OperationID}}
 
+type {{$opName}}Request struct {
+	client *Client
+	ctx    context.Context
+{{- range pathParams .Params}}
+	{{goParamName .Name}} {{goType .Type}}
+{{- end}}
+{{- if hasBody .RequestBody}}
+	body {{goTypeDeref .RequestBody}}
+{{- end}}
+{{- range requiredQueryParams .Params}}
+	{{goParamName .Name}} {{goType .Type}}
+{{- end}}
+{{- range optionalQueryParams .Params}}
+	{{goParamName .Name}} *{{goType .Type}}
+{{- end}}
+}
+
+func (c *Client) {{$opName}}(ctx context.Context
+{{- range pathParams .Params}}, {{goParamName .Name}} {{goType .Type}}{{end}}
+{{- if hasBody .RequestBody}}, body {{goTypeDeref .RequestBody}}{{end}}
+{{- range requiredQueryParams .Params}}, {{goParamName .Name}} {{goType .Type}}{{end}}) *{{$opName}}Request {
+	return &{{$opName}}Request{
+		client: c,
+		ctx:    ctx,
+{{- range pathParams .Params}}
+		{{goParamName .Name}}: {{goParamName .Name}},
+{{- end}}
+{{- if hasBody .RequestBody}}
+		body: body,
+{{- end}}
+{{- range requiredQueryParams .Params}}
+		{{goParamName .Name}}: {{goParamName .Name}},
+{{- end}}
+	}
+}
+{{range optionalQueryParams .Params}}
+func (r *{{$opName}}Request) {{goName .Name}}(v {{goType .Type}}) *{{$opName}}Request {
+	r.{{goParamName .Name}} = &v
+	return r
+}
+{{end}}
+{{- if hasResponse .ResponseType}}
+{{- if isArrayResponse .ResponseType}}
+func (r *{{$opName}}Request) Do() ({{goTypeDeref .ResponseType}}, error) {
+{{- else if isRefResponse .ResponseType}}
+func (r *{{$opName}}Request) Do() ({{goTypeDeref .ResponseType}}, error) {
+{{- else}}
+func (r *{{$opName}}Request) Do() ({{goTypeDeref .ResponseType}}, error) {
+{{- end}}
+	query := url.Values{}
+{{- range requiredQueryParams .Params}}
+{{- if isStringType .Type}}
+	query.Set("{{.Name}}", r.{{goParamName .Name}})
+{{- else}}
+	query.Set("{{.Name}}", fmt.Sprint(r.{{goParamName .Name}}))
+{{- end}}
+{{- end}}
+{{- range optionalQueryParams .Params}}
+	if r.{{goParamName .Name}} != nil {
+{{- if isStringType .Type}}
+		query.Set("{{.Name}}", *r.{{goParamName .Name}})
+{{- else}}
+		query.Set("{{.Name}}", fmt.Sprint(*r.{{goParamName .Name}}))
+{{- end}}
+	}
+{{- end}}
+	path := fmt.Sprintf("{{goFmtPath .Path}}"{{range goFmtPathArgs .Path}}, r.{{.}}{{end}})
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
+{{- if hasBody .RequestBody}}
+	resp, err := r.client.do(r.ctx, "{{.Method}}", path, r.body)
+{{- else}}
+	resp, err := r.client.do(r.ctx, "{{.Method}}", path, nil)
+{{- end}}
+	if err != nil {
+{{- if isArrayResponse .ResponseType}}
+		return nil, err
+{{- else if isRefResponse .ResponseType}}
+		return {{goTypeDeref .ResponseType}}{}, err
+{{- else}}
+		var zero {{goTypeDeref .ResponseType}}
+		return zero, err
+{{- end}}
+	}
+	defer resp.Body.Close()
+	var result {{goTypeDeref .ResponseType}}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+{{- if isArrayResponse .ResponseType}}
+		return nil, fmt.Errorf("decoding response: %w", err)
+{{- else if isRefResponse .ResponseType}}
+		return {{goTypeDeref .ResponseType}}{}, fmt.Errorf("decoding response: %w", err)
+{{- else}}
+		var zero {{goTypeDeref .ResponseType}}
+		return zero, fmt.Errorf("decoding response: %w", err)
+{{- end}}
+	}
+	return result, nil
+}
+{{- else}}
+func (r *{{$opName}}Request) Do() error {
+	query := url.Values{}
+{{- range requiredQueryParams .Params}}
+{{- if isStringType .Type}}
+	query.Set("{{.Name}}", r.{{goParamName .Name}})
+{{- else}}
+	query.Set("{{.Name}}", fmt.Sprint(r.{{goParamName .Name}}))
+{{- end}}
+{{- end}}
+{{- range optionalQueryParams .Params}}
+	if r.{{goParamName .Name}} != nil {
+{{- if isStringType .Type}}
+		query.Set("{{.Name}}", *r.{{goParamName .Name}})
+{{- else}}
+		query.Set("{{.Name}}", fmt.Sprint(*r.{{goParamName .Name}}))
+{{- end}}
+	}
+{{- end}}
+	path := fmt.Sprintf("{{goFmtPath .Path}}"{{range goFmtPathArgs .Path}}, r.{{.}}{{end}})
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
+{{- if hasBody .RequestBody}}
+	resp, err := r.client.do(r.ctx, "{{.Method}}", path, r.body)
+{{- else}}
+	resp, err := r.client.do(r.ctx, "{{.Method}}", path, nil)
+{{- end}}
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
+}
+{{- end}}
+{{end}}
 {{- end}}
 `
 

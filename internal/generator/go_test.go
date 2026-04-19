@@ -224,3 +224,230 @@ func TestGenerateGoClientNoAuth(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateGoSimpleEndpoint(t *testing.T) {
+	spec := &ir.Spec{
+		Title:   "Test API",
+		BaseURL: "https://api.test.com",
+		Models: []ir.Model{
+			{
+				Name: "Pet",
+				Fields: []ir.Field{
+					{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true},
+					{Name: "name", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true},
+				},
+			},
+		},
+		Endpoints: []ir.Endpoint{
+			{
+				OperationID:  "getPet",
+				Method:       "GET",
+				Path:         "/pets/{petId}",
+				Params:       []ir.Param{{Name: "petId", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}},
+				ResponseType: &ir.Type{Kind: ir.TypeRef, Ref: "Pet"},
+			},
+		},
+	}
+
+	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "petstore"})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	if _, err := format.Source([]byte(output)); err != nil {
+		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
+	}
+
+	checks := []string{
+		"type GetPetRequest struct {",
+		"func (c *Client) GetPet(ctx context.Context, petId int) *GetPetRequest {",
+		"func (r *GetPetRequest) Do() (Pet, error) {",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("output missing %q\n\nFull output:\n%s", check, output)
+		}
+	}
+}
+
+func TestGenerateGoOptionalQueryParams(t *testing.T) {
+	spec := &ir.Spec{
+		Title:   "Test API",
+		BaseURL: "https://api.test.com",
+		Models: []ir.Model{
+			{Name: "Pet", Fields: []ir.Field{{Name: "name", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true}}},
+		},
+		Endpoints: []ir.Endpoint{
+			{
+				OperationID: "listPets",
+				Method:      "GET",
+				Path:        "/pets",
+				Params: []ir.Param{
+					{Name: "limit", In: "query", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: false},
+					{Name: "tag", In: "query", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: false},
+				},
+				ResponseType: &ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypeRef, Ref: "Pet"}},
+			},
+		},
+	}
+
+	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "petstore"})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	if _, err := format.Source([]byte(output)); err != nil {
+		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
+	}
+
+	checks := []string{
+		"func (c *Client) ListPets(ctx context.Context) *ListPetsRequest {",
+		"func (r *ListPetsRequest) Limit(v int) *ListPetsRequest {",
+		"func (r *ListPetsRequest) Tag(v string) *ListPetsRequest {",
+		"func (r *ListPetsRequest) Do() ([]Pet, error) {",
+		"limit  *int",
+		"tag    *string",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("output missing %q\n\nFull output:\n%s", check, output)
+		}
+	}
+}
+
+func TestGenerateGoRequiredQueryParams(t *testing.T) {
+	spec := &ir.Spec{
+		Title:   "Test API",
+		BaseURL: "https://api.test.com",
+		Models: []ir.Model{
+			{Name: "User", Fields: []ir.Field{{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}}},
+		},
+		Endpoints: []ir.Endpoint{
+			{
+				OperationID: "listUsers",
+				Method:      "GET",
+				Path:        "/users",
+				Params: []ir.Param{
+					{Name: "is_active", In: "query", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimBool}, Required: true},
+					{Name: "limit", In: "query", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: false},
+				},
+				ResponseType: &ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypeRef, Ref: "User"}},
+			},
+		},
+	}
+
+	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "testapi"})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	if _, err := format.Source([]byte(output)); err != nil {
+		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
+	}
+
+	if !strings.Contains(output, "func (c *Client) ListUsers(ctx context.Context, isActive bool) *ListUsersRequest {") {
+		t.Errorf("required query param should be positional arg\n\nFull output:\n%s", output)
+	}
+
+	if !strings.Contains(output, "func (r *ListUsersRequest) Limit(v int) *ListUsersRequest {") {
+		t.Errorf("optional query param should be chained setter\n\nFull output:\n%s", output)
+	}
+}
+
+func TestGenerateGoRequestBody(t *testing.T) {
+	spec := &ir.Spec{
+		Title:   "Test API",
+		BaseURL: "https://api.test.com",
+		Models: []ir.Model{
+			{Name: "Pet", Fields: []ir.Field{{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}}},
+			{Name: "PetCreate", Fields: []ir.Field{{Name: "name", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true}}},
+		},
+		Endpoints: []ir.Endpoint{
+			{
+				OperationID:  "createPet",
+				Method:       "POST",
+				Path:         "/pets",
+				RequestBody:  &ir.Type{Kind: ir.TypeRef, Ref: "PetCreate"},
+				ResponseType: &ir.Type{Kind: ir.TypeRef, Ref: "Pet"},
+			},
+		},
+	}
+
+	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "petstore"})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	if _, err := format.Source([]byte(output)); err != nil {
+		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
+	}
+
+	checks := []string{
+		"func (c *Client) CreatePet(ctx context.Context, body PetCreate) *CreatePetRequest {",
+		"func (r *CreatePetRequest) Do() (Pet, error) {",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("output missing %q\n\nFull output:\n%s", check, output)
+		}
+	}
+}
+
+func TestGenerateGoNoContent(t *testing.T) {
+	spec := &ir.Spec{
+		Title:   "Test API",
+		BaseURL: "https://api.test.com",
+		Endpoints: []ir.Endpoint{
+			{
+				OperationID: "deletePet",
+				Method:      "DELETE",
+				Path:        "/pets/{petId}",
+				Params:      []ir.Param{{Name: "petId", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}},
+			},
+		},
+	}
+
+	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "petstore"})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	if _, err := format.Source([]byte(output)); err != nil {
+		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
+	}
+
+	if !strings.Contains(output, "func (r *DeletePetRequest) Do() error {") {
+		t.Errorf("204 endpoint should return just error\n\nFull output:\n%s", output)
+	}
+}
+
+func TestGenerateGoArrayResponse(t *testing.T) {
+	spec := &ir.Spec{
+		Title:   "Test API",
+		BaseURL: "https://api.test.com",
+		Models: []ir.Model{
+			{Name: "Pet", Fields: []ir.Field{{Name: "name", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true}}},
+		},
+		Endpoints: []ir.Endpoint{
+			{
+				OperationID:  "listPets",
+				Method:       "GET",
+				Path:         "/pets",
+				ResponseType: &ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypeRef, Ref: "Pet"}},
+			},
+		},
+	}
+
+	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "petstore"})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	if _, err := format.Source([]byte(output)); err != nil {
+		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
+	}
+
+	if !strings.Contains(output, "func (r *ListPetsRequest) Do() ([]Pet, error) {") {
+		t.Errorf("array response should return []Pet\n\nFull output:\n%s", output)
+	}
+}
