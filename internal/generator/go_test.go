@@ -451,3 +451,140 @@ func TestGenerateGoArrayResponse(t *testing.T) {
 		t.Errorf("array response should return []Pet\n\nFull output:\n%s", output)
 	}
 }
+
+func TestGenerateGoAuthBearerToken(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Bearer API",
+		Endpoints: []ir.Endpoint{
+			{OperationID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+
+	output, err := GenerateGo(spec, GoOptions{Auth: "bearer-token", Package: "testapi"})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	if _, err := format.Source([]byte(output)); err != nil {
+		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
+	}
+
+	checks := []string{
+		"bearerToken string",
+		"func NewClient(baseURL string, httpClient *http.Client, bearerToken string) *Client {",
+		`req.Header.Set("Authorization", "Bearer "+c.bearerToken)`,
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("output missing %q\n\nFull output:\n%s", check, output)
+		}
+	}
+}
+
+func TestGenerateGoAuthAPIKey(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "API Key API",
+		Auth:  &ir.Auth{Type: ir.AuthAPIKey, Name: "X-API-Key", In: "header"},
+		Endpoints: []ir.Endpoint{
+			{OperationID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+
+	output, err := GenerateGo(spec, GoOptions{Auth: "api-key", Package: "testapi"})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	if _, err := format.Source([]byte(output)); err != nil {
+		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
+	}
+
+	checks := []string{
+		"apiKey       string",
+		"apiKeyHeader string",
+		"func NewClient(baseURL string, httpClient *http.Client, apiKey string) *Client {",
+		`apiKeyHeader: "X-API-Key"`,
+		"req.Header.Set(c.apiKeyHeader, c.apiKey)",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("output missing %q\n\nFull output:\n%s", check, output)
+		}
+	}
+}
+
+func TestGenerateGoAuthCustom(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Custom Auth API",
+		Endpoints: []ir.Endpoint{
+			{OperationID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+
+	output, err := GenerateGo(spec, GoOptions{Auth: "custom", Package: "testapi"})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	if _, err := format.Source([]byte(output)); err != nil {
+		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
+	}
+
+	checks := []string{
+		"authFunc func(req *http.Request)",
+		"func NewClient(baseURL string, httpClient *http.Client, authFunc func(req *http.Request)) *Client {",
+		"c.authFunc(req)",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("output missing %q\n\nFull output:\n%s", check, output)
+		}
+	}
+}
+
+func TestGenerateGoAuthGCPIDToken(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "GCP API",
+		Endpoints: []ir.Endpoint{
+			{OperationID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+
+	output, err := GenerateGo(spec, GoOptions{Auth: "gcp-id-token", Package: "testapi"})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	checks := []string{
+		`"google.golang.org/api/idtoken"`,
+		"func NewClient(baseURL string, httpClient *http.Client, targetAudience string) (*Client, error) {",
+		"idtoken.NewTokenSource",
+		"c.tokenSource.Token()",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("output missing %q\n\nFull output:\n%s", check, output)
+		}
+	}
+}
+
+func TestGenerateGoAuthDefaultIsNone(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Default API",
+		Endpoints: []ir.Endpoint{
+			{OperationID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+
+	output, err := GenerateGo(spec, GoOptions{Package: "testapi"})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	noChecks := []string{"bearerToken", "apiKey", "authFunc", "idtoken", "tokenSource"}
+	for _, check := range noChecks {
+		if strings.Contains(output, check) {
+			t.Errorf("default auth should not contain %q", check)
+		}
+	}
+}
