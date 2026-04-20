@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/brendanmartin/oapi-liteclient/internal/generator"
 	"github.com/brendanmartin/oapi-liteclient/internal/parser"
@@ -12,7 +13,7 @@ import (
 
 func main() {
 	spec := flag.String("spec", "", "Path or URL to OpenAPI spec (YAML or JSON)")
-	lang := flag.String("lang", "python", "Target language (python)")
+	lang := flag.String("lang", "python", "Target language (python, go)")
 	style := flag.String("style", "pydantic", "Model style for Python: pydantic (default) or dataclass")
 	auth := flag.String("auth", "none", "Auth strategy: none, custom, bearer-token, gcp-id-token, api-key")
 	out := flag.String("out", "./client", "Output directory")
@@ -42,8 +43,21 @@ func main() {
 			os.Exit(1)
 		}
 		filename = "client.py"
+	case "go":
+		pkg := filepath.Base(*out)
+		pkg = strings.ReplaceAll(pkg, "-", "_")
+		if len(pkg) > 0 && pkg[0] >= '0' && pkg[0] <= '9' {
+			pkg = "pkg" + pkg
+		}
+		opts := generator.GoOptions{Auth: *auth, Package: pkg}
+		output, err = generator.GenerateGo(irSpec, opts)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		filename = "client.go"
 	default:
-		fmt.Fprintf(os.Stderr, "error: unsupported language %q (supported: python)\n", *lang)
+		fmt.Fprintf(os.Stderr, "error: unsupported language %q (supported: python, go)\n", *lang)
 		os.Exit(1)
 	}
 

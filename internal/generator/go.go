@@ -332,6 +332,7 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}) 
 	return resp, nil
 }
 {{range .Endpoints}}
+{{- if .OperationID}}
 {{- $opName := goName .OperationID}}
 
 type {{$opName}}Request struct {
@@ -467,6 +468,7 @@ func (r *{{$opName}}Request) Do() error {
 	resp.Body.Close()
 	return nil
 }
+{{- end}}
 {{- end}}
 {{end}}
 {{- end}}
