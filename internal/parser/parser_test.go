@@ -107,6 +107,44 @@ func TestParsePetstore(t *testing.T) {
 	}
 }
 
+func TestParseSwaggo(t *testing.T) {
+	spec, err := Parse(testdataPath("swaggo-example.yaml"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	task := findModel(spec.Models, "TaskResponse")
+	if task == nil {
+		t.Fatal("TaskResponse model not found (dotted name not sanitized?)")
+	}
+
+	list := findModel(spec.Models, "ListResponse")
+	if list == nil {
+		t.Fatal("ListResponse model not found")
+	}
+	itemsField := findField(list.Fields, "items")
+	if itemsField == nil {
+		t.Fatal("ListResponse.items not found")
+	}
+	if itemsField.Type.Kind != ir.TypeArray {
+		t.Fatalf("ListResponse.items kind = %v, want TypeArray", itemsField.Type.Kind)
+	}
+	if itemsField.Type.Elem.Ref != "TaskResponse" {
+		t.Errorf("ListResponse.items elem ref = %q, want TaskResponse", itemsField.Type.Elem.Ref)
+	}
+
+	createTask := findEndpoint(spec.Endpoints, "createTask")
+	if createTask == nil {
+		t.Fatal("createTask endpoint not found")
+	}
+	if createTask.RequestBody == nil {
+		t.Fatal("createTask.RequestBody is nil")
+	}
+	if createTask.RequestBody.Ref != "CreateTaskRequest" {
+		t.Errorf("createTask.RequestBody.Ref = %q, want CreateTaskRequest", createTask.RequestBody.Ref)
+	}
+}
+
 func TestParseSwaggerV2(t *testing.T) {
 	spec, err := Parse(testdataPath("petstore-v2.yaml"))
 	if err != nil {

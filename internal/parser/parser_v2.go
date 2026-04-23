@@ -29,7 +29,7 @@ func buildIRFromV2(model *libopenapi.DocumentModel[v2.Swagger]) *ir.Spec {
 			if schema == nil {
 				continue
 			}
-			m := buildModel(name, schema)
+			m := buildModel(sanitizeName(name), schema)
 			spec.Models = append(spec.Models, m)
 		}
 	}

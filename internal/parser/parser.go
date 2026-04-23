@@ -156,7 +156,7 @@ func schemaToType(proxy *base.SchemaProxy) ir.Type {
 	ref := proxy.GetReference()
 	if ref != "" {
 		parts := strings.Split(ref, "/")
-		refName := parts[len(parts)-1]
+		refName := sanitizeName(parts[len(parts)-1])
 		return ir.Type{Kind: ir.TypeRef, Ref: refName}
 	}
 
@@ -282,4 +282,13 @@ func boolVal(b *bool) bool {
 		return false
 	}
 	return *b
+}
+
+// sanitizeName strips a dotted package prefix (e.g. "handler.TaskResponse" → "TaskResponse")
+// common in swaggo-generated Swagger 2.0 specs.
+func sanitizeName(name string) string {
+	if i := strings.LastIndex(name, "."); i >= 0 {
+		return name[i+1:]
+	}
+	return name
 }
