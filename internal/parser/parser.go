@@ -293,18 +293,25 @@ func boolVal(b *bool) bool {
 }
 
 // deriveOperationID generates an operationId from HTTP method and path
-// (e.g. "GET", "/documents/{id}" → "getDocumentsById").
+// (e.g. "GET", "/documents/{id}" → "getDocumentsById",
+//
+//	"POST", "/tenants/{id}/rotate-key" → "postTenantsIdRotateKey").
 func deriveOperationID(method, path string) string {
 	method = strings.ToLower(method)
 	var parts []string
 	parts = append(parts, method)
-	for _, seg := range strings.Split(strings.Trim(path, "/"), "/") {
+	for seg := range strings.SplitSeq(strings.Trim(path, "/"), "/") {
 		if seg == "" {
 			continue
 		}
 		seg = strings.TrimPrefix(seg, "{")
 		seg = strings.TrimSuffix(seg, "}")
-		parts = append(parts, strings.ToUpper(seg[:1])+seg[1:])
+		for word := range strings.SplitSeq(seg, "-") {
+			if word == "" {
+				continue
+			}
+			parts = append(parts, strings.ToUpper(word[:1])+word[1:])
+		}
 	}
 	return strings.Join(parts, "")
 }
