@@ -42,7 +42,7 @@ type Field struct {
 type Type struct {
 	Kind TypeKind
 	Prim PrimKind // set when Kind == TypePrimitive
-	Elem *Type    // set when Kind == TypeArray
+	Elem *Type    // set when Kind == TypeArray (element) or TypeMap (value)
 	Ref  string   // model name, set when Kind == TypeRef
 }
 
@@ -52,6 +52,7 @@ const (
 	TypePrimitive TypeKind = iota
 	TypeArray
 	TypeRef
+	TypeMap
 )
 
 type PrimKind int

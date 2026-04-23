@@ -84,8 +84,12 @@ func buildEndpointsV2(path string, pathItem *v2.PathItem) []ir.Endpoint {
 		if op == nil {
 			continue
 		}
+		opID := op.OperationId
+		if opID == "" {
+			opID = deriveOperationID(method, path)
+		}
 		ep := ir.Endpoint{
-			OperationID: op.OperationId,
+			OperationID: opID,
 			Summary:     op.Summary,
 			Description: op.Description,
 			Method:      method,

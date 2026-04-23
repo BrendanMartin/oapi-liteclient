@@ -259,9 +259,9 @@ func TestGenerateGoSimpleEndpoint(t *testing.T) {
 	}
 
 	checks := []string{
-		"type GetPetRequest struct {",
-		"func (c *Client) GetPet(ctx context.Context, petId int) *GetPetRequest {",
-		"func (r *GetPetRequest) Do() (Pet, error) {",
+		"type GetPetOp struct {",
+		"func (c *Client) GetPet(ctx context.Context, petId int) *GetPetOp {",
+		"func (r *GetPetOp) Do() (Pet, error) {",
 	}
 	for _, check := range checks {
 		if !strings.Contains(output, check) {
@@ -301,10 +301,10 @@ func TestGenerateGoOptionalQueryParams(t *testing.T) {
 	}
 
 	checks := []string{
-		"func (c *Client) ListPets(ctx context.Context) *ListPetsRequest {",
-		"func (r *ListPetsRequest) Limit(v int) *ListPetsRequest {",
-		"func (r *ListPetsRequest) Tag(v string) *ListPetsRequest {",
-		"func (r *ListPetsRequest) Do() ([]Pet, error) {",
+		"func (c *Client) ListPets(ctx context.Context) *ListPetsOp {",
+		"func (r *ListPetsOp) Limit(v int) *ListPetsOp {",
+		"func (r *ListPetsOp) Tag(v string) *ListPetsOp {",
+		"func (r *ListPetsOp) Do() ([]Pet, error) {",
 		"limit  *int",
 		"tag    *string",
 	}
@@ -345,11 +345,11 @@ func TestGenerateGoRequiredQueryParams(t *testing.T) {
 		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
 	}
 
-	if !strings.Contains(output, "func (c *Client) ListUsers(ctx context.Context, isActive bool) *ListUsersRequest {") {
+	if !strings.Contains(output, "func (c *Client) ListUsers(ctx context.Context, isActive bool) *ListUsersOp {") {
 		t.Errorf("required query param should be positional arg\n\nFull output:\n%s", output)
 	}
 
-	if !strings.Contains(output, "func (r *ListUsersRequest) Limit(v int) *ListUsersRequest {") {
+	if !strings.Contains(output, "func (r *ListUsersOp) Limit(v int) *ListUsersOp {") {
 		t.Errorf("optional query param should be chained setter\n\nFull output:\n%s", output)
 	}
 }
@@ -383,8 +383,8 @@ func TestGenerateGoRequestBody(t *testing.T) {
 	}
 
 	checks := []string{
-		"func (c *Client) CreatePet(ctx context.Context, body PetCreate) *CreatePetRequest {",
-		"func (r *CreatePetRequest) Do() (Pet, error) {",
+		"func (c *Client) CreatePet(ctx context.Context, body PetCreate) *CreatePetOp {",
+		"func (r *CreatePetOp) Do() (Pet, error) {",
 	}
 	for _, check := range checks {
 		if !strings.Contains(output, check) {
@@ -416,7 +416,7 @@ func TestGenerateGoNoContent(t *testing.T) {
 		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
 	}
 
-	if !strings.Contains(output, "func (r *DeletePetRequest) Do() error {") {
+	if !strings.Contains(output, "func (r *DeletePetOp) Do() error {") {
 		t.Errorf("204 endpoint should return just error\n\nFull output:\n%s", output)
 	}
 }
@@ -447,7 +447,7 @@ func TestGenerateGoArrayResponse(t *testing.T) {
 		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
 	}
 
-	if !strings.Contains(output, "func (r *ListPetsRequest) Do() ([]Pet, error) {") {
+	if !strings.Contains(output, "func (r *ListPetsOp) Do() ([]Pet, error) {") {
 		t.Errorf("array response should return []Pet\n\nFull output:\n%s", output)
 	}
 }
@@ -661,20 +661,20 @@ func TestGenerateGoPetstore(t *testing.T) {
 		"type Pet struct {",
 		"type PetCreate struct {",
 		"type Client struct {",
-		"type ListPetsRequest struct {",
-		"type CreatePetRequest struct {",
-		"type GetPetRequest struct {",
-		"type DeletePetRequest struct {",
-		"func (c *Client) ListPets(ctx context.Context) *ListPetsRequest {",
-		"func (r *ListPetsRequest) Limit(v int) *ListPetsRequest {",
-		"func (r *ListPetsRequest) Tag(v string) *ListPetsRequest {",
-		"func (r *ListPetsRequest) Do() ([]Pet, error) {",
-		"func (c *Client) CreatePet(ctx context.Context, body PetCreate) *CreatePetRequest {",
-		"func (r *CreatePetRequest) Do() (Pet, error) {",
-		"func (c *Client) GetPet(ctx context.Context, petId int) *GetPetRequest {",
-		"func (r *GetPetRequest) Do() (Pet, error) {",
-		"func (c *Client) DeletePet(ctx context.Context, petId int) *DeletePetRequest {",
-		"func (r *DeletePetRequest) Do() error {",
+		"type ListPetsOp struct {",
+		"type CreatePetOp struct {",
+		"type GetPetOp struct {",
+		"type DeletePetOp struct {",
+		"func (c *Client) ListPets(ctx context.Context) *ListPetsOp {",
+		"func (r *ListPetsOp) Limit(v int) *ListPetsOp {",
+		"func (r *ListPetsOp) Tag(v string) *ListPetsOp {",
+		"func (r *ListPetsOp) Do() ([]Pet, error) {",
+		"func (c *Client) CreatePet(ctx context.Context, body PetCreate) *CreatePetOp {",
+		"func (r *CreatePetOp) Do() (Pet, error) {",
+		"func (c *Client) GetPet(ctx context.Context, petId int) *GetPetOp {",
+		"func (r *GetPetOp) Do() (Pet, error) {",
+		"func (c *Client) DeletePet(ctx context.Context, petId int) *DeletePetOp {",
+		"func (r *DeletePetOp) Do() error {",
 		"apiKey",
 		"apiKeyHeader",
 	}

@@ -183,6 +183,10 @@ func schemaToType(proxy *base.SchemaProxy) ir.Type {
 		}
 		return ir.Type{Kind: ir.TypeArray, Elem: &elemType}
 	case "object":
+		if schema.AdditionalProperties != nil && schema.AdditionalProperties.IsA() {
+			valType := schemaToType(schema.AdditionalProperties.A)
+			return ir.Type{Kind: ir.TypeMap, Elem: &valType}
+		}
 		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}
 	default:
 		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}
@@ -204,8 +208,12 @@ func buildEndpoints(path string, pathItem *v3.PathItem) []ir.Endpoint {
 		if op == nil {
 			continue
 		}
+		opID := op.OperationId
+		if opID == "" {
+			opID = deriveOperationID(method, path)
+		}
 		ep := ir.Endpoint{
-			OperationID: op.OperationId,
+			OperationID: opID,
 			Summary:     op.Summary,
 			Description: op.Description,
 			Method:      method,
@@ -282,6 +290,23 @@ func boolVal(b *bool) bool {
 		return false
 	}
 	return *b
+}
+
+// deriveOperationID generates an operationId from HTTP method and path
+// (e.g. "GET", "/documents/{id}" → "getDocumentsById").
+func deriveOperationID(method, path string) string {
+	method = strings.ToLower(method)
+	var parts []string
+	parts = append(parts, method)
+	for _, seg := range strings.Split(strings.Trim(path, "/"), "/") {
+		if seg == "" {
+			continue
+		}
+		seg = strings.TrimPrefix(seg, "{")
+		seg = strings.TrimSuffix(seg, "}")
+		parts = append(parts, strings.ToUpper(seg[:1])+seg[1:])
+	}
+	return strings.Join(parts, "")
 }
 
 // sanitizeName strips a dotted package prefix (e.g. "handler.TaskResponse" → "TaskResponse")

@@ -75,6 +75,11 @@ func goType(t ir.Type) string {
 		return "[]interface{}"
 	case ir.TypeRef:
 		return t.Ref
+	case ir.TypeMap:
+		if t.Elem != nil {
+			return "map[string]" + goType(*t.Elem)
+		}
+		return "map[string]interface{}"
 	}
 	return "string"
 }
@@ -335,7 +340,7 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}) 
 {{- if .OperationID}}
 {{- $opName := goName .OperationID}}
 
-type {{$opName}}Request struct {
+type {{$opName}}Op struct {
 	client *Client
 	ctx    context.Context
 {{- range pathParams .Params}}
@@ -355,8 +360,8 @@ type {{$opName}}Request struct {
 func (c *Client) {{$opName}}(ctx context.Context
 {{- range pathParams .Params}}, {{goParamName .Name}} {{goType .Type}}{{end}}
 {{- if hasBody .RequestBody}}, body {{goTypeDeref .RequestBody}}{{end}}
-{{- range requiredQueryParams .Params}}, {{goParamName .Name}} {{goType .Type}}{{end}}) *{{$opName}}Request {
-	return &{{$opName}}Request{
+{{- range requiredQueryParams .Params}}, {{goParamName .Name}} {{goType .Type}}{{end}}) *{{$opName}}Op {
+	return &{{$opName}}Op{
 		client: c,
 		ctx:    ctx,
 {{- range pathParams .Params}}
@@ -371,18 +376,18 @@ func (c *Client) {{$opName}}(ctx context.Context
 	}
 }
 {{range optionalQueryParams .Params}}
-func (r *{{$opName}}Request) {{goName .Name}}(v {{goType .Type}}) *{{$opName}}Request {
+func (r *{{$opName}}Op) {{goName .Name}}(v {{goType .Type}}) *{{$opName}}Op {
 	r.{{goParamName .Name}} = &v
 	return r
 }
 {{end}}
 {{- if hasResponse .ResponseType}}
 {{- if isArrayResponse .ResponseType}}
-func (r *{{$opName}}Request) Do() ({{goTypeDeref .ResponseType}}, error) {
+func (r *{{$opName}}Op) Do() ({{goTypeDeref .ResponseType}}, error) {
 {{- else if isRefResponse .ResponseType}}
-func (r *{{$opName}}Request) Do() ({{goTypeDeref .ResponseType}}, error) {
+func (r *{{$opName}}Op) Do() ({{goTypeDeref .ResponseType}}, error) {
 {{- else}}
-func (r *{{$opName}}Request) Do() ({{goTypeDeref .ResponseType}}, error) {
+func (r *{{$opName}}Op) Do() ({{goTypeDeref .ResponseType}}, error) {
 {{- end}}
 	query := url.Values{}
 {{- range requiredQueryParams .Params}}
@@ -435,7 +440,7 @@ func (r *{{$opName}}Request) Do() ({{goTypeDeref .ResponseType}}, error) {
 	return result, nil
 }
 {{- else}}
-func (r *{{$opName}}Request) Do() error {
+func (r *{{$opName}}Op) Do() error {
 	query := url.Values{}
 {{- range requiredQueryParams .Params}}
 {{- if isStringType .Type}}

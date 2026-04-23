@@ -96,6 +96,11 @@ func pyType(t ir.Type) string {
 		return "list"
 	case ir.TypeRef:
 		return t.Ref
+	case ir.TypeMap:
+		if t.Elem != nil {
+			return "dict[str, " + pyType(*t.Elem) + "]"
+		}
+		return "dict[str, Any]"
 	}
 	return "str"
 }
