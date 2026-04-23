@@ -107,6 +107,102 @@ func TestParsePetstore(t *testing.T) {
 	}
 }
 
+func TestParseSwaggerV2(t *testing.T) {
+	spec, err := Parse(testdataPath("petstore-v2.yaml"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	if spec.Title != "Petstore" {
+		t.Errorf("Title = %q, want %q", spec.Title, "Petstore")
+	}
+
+	if spec.BaseURL != "https://petstore.example.com/v1" {
+		t.Errorf("BaseURL = %q, want %q", spec.BaseURL, "https://petstore.example.com/v1")
+	}
+
+	if spec.Auth == nil {
+		t.Fatal("Auth is nil")
+	}
+	if spec.Auth.Type != ir.AuthAPIKey {
+		t.Errorf("Auth.Type = %v, want AuthAPIKey", spec.Auth.Type)
+	}
+	if spec.Auth.Name != "X-API-Key" {
+		t.Errorf("Auth.Name = %q, want %q", spec.Auth.Name, "X-API-Key")
+	}
+
+	if len(spec.Models) != 3 {
+		t.Fatalf("len(Models) = %d, want 3", len(spec.Models))
+	}
+
+	pet := findModel(spec.Models, "Pet")
+	if pet == nil {
+		t.Fatal("Pet model not found")
+	}
+	if len(pet.Fields) != 5 {
+		t.Errorf("Pet has %d fields, want 5", len(pet.Fields))
+	}
+
+	idField := findField(pet.Fields, "id")
+	if idField == nil {
+		t.Fatal("Pet.id not found")
+	}
+	if !idField.Required {
+		t.Error("Pet.id should be required")
+	}
+	if idField.Type.Prim != ir.PrimInt {
+		t.Errorf("Pet.id type = %v, want PrimInt", idField.Type.Prim)
+	}
+
+	tagField := findField(pet.Fields, "tag")
+	if tagField == nil {
+		t.Fatal("Pet.tag not found")
+	}
+	if tagField.Required {
+		t.Error("Pet.tag should not be required")
+	}
+
+	if len(spec.Endpoints) != 4 {
+		t.Fatalf("len(Endpoints) = %d, want 4", len(spec.Endpoints))
+	}
+
+	listPets := findEndpoint(spec.Endpoints, "listPets")
+	if listPets == nil {
+		t.Fatal("listPets endpoint not found")
+	}
+	if listPets.Method != "GET" {
+		t.Errorf("listPets.Method = %q, want GET", listPets.Method)
+	}
+	if len(listPets.Params) != 2 {
+		t.Errorf("listPets has %d params, want 2", len(listPets.Params))
+	}
+	if listPets.ResponseType == nil {
+		t.Fatal("listPets.ResponseType is nil")
+	}
+	if listPets.ResponseType.Kind != ir.TypeArray {
+		t.Errorf("listPets response kind = %v, want TypeArray", listPets.ResponseType.Kind)
+	}
+
+	createPet := findEndpoint(spec.Endpoints, "createPet")
+	if createPet == nil {
+		t.Fatal("createPet endpoint not found")
+	}
+	if createPet.RequestBody == nil {
+		t.Fatal("createPet.RequestBody is nil")
+	}
+	if createPet.RequestBody.Ref != "PetCreate" {
+		t.Errorf("createPet.RequestBody.Ref = %q, want PetCreate", createPet.RequestBody.Ref)
+	}
+
+	deletePet := findEndpoint(spec.Endpoints, "deletePet")
+	if deletePet == nil {
+		t.Fatal("deletePet endpoint not found")
+	}
+	if deletePet.ResponseType != nil {
+		t.Error("deletePet.ResponseType should be nil (204)")
+	}
+}
+
 func TestParseComplex(t *testing.T) {
 	spec, err := Parse(testdataPath("complex.yaml"))
 	if err != nil {

@@ -1,0 +1,115 @@
+swagger: "2.0"
+info:
+  title: Petstore
+  version: "1.0.0"
+host: petstore.example.com
+basePath: /v1
+schemes:
+  - https
+consumes:
+  - application/json
+produces:
+  - application/json
+securityDefinitions:
+  ApiKeyAuth:
+    type: apiKey
+    in: header
+    name: X-API-Key
+security:
+  - ApiKeyAuth: []
+definitions:
+  Pet:
+    type: object
+    required:
+      - id
+      - name
+    properties:
+      id:
+        type: integer
+      name:
+        type: string
+      tag:
+        type: string
+      vaccinated:
+        type: boolean
+        default: false
+      species:
+        type: string
+        default: dog
+  PetCreate:
+    type: object
+    required:
+      - name
+    properties:
+      name:
+        type: string
+      tag:
+        type: string
+  Error:
+    type: object
+    required:
+      - code
+      - message
+    properties:
+      code:
+        type: integer
+      message:
+        type: string
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      summary: List all pets
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          type: integer
+        - name: tag
+          in: query
+          required: false
+          type: string
+      responses:
+        "200":
+          description: A list of pets
+          schema:
+            type: array
+            items:
+              $ref: "#/definitions/Pet"
+    post:
+      operationId: createPet
+      summary: Create a pet
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: "#/definitions/PetCreate"
+      responses:
+        "201":
+          description: The created pet
+          schema:
+            $ref: "#/definitions/Pet"
+  /pets/{petId}:
+    get:
+      operationId: getPet
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          type: integer
+      responses:
+        "200":
+          description: A single pet
+          schema:
+            $ref: "#/definitions/Pet"
+    delete:
+      operationId: deletePet
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: Pet deleted

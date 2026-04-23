@@ -13,7 +13,7 @@ import (
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
 
-// Parse reads an OpenAPI spec from a file path or URL and returns the IR.
+// Parse reads an OpenAPI spec (v2 or v3) from a file path or URL and returns the IR.
 func Parse(specPath string) (*ir.Spec, error) {
 	data, err := loadSpec(specPath)
 	if err != nil {
@@ -23,6 +23,14 @@ func Parse(specPath string) (*ir.Spec, error) {
 	doc, err := libopenapi.NewDocument(data)
 	if err != nil {
 		return nil, fmt.Errorf("parsing spec: %w", err)
+	}
+
+	if strings.HasPrefix(doc.GetVersion(), "2") {
+		model, err := doc.BuildV2Model()
+		if err != nil {
+			return nil, fmt.Errorf("building v2 model: %w", err)
+		}
+		return buildIRFromV2(model), nil
 	}
 
 	model, err := doc.BuildV3Model()
