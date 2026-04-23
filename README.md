@@ -32,9 +32,12 @@ oapi-liteclient --spec spec.yaml --lang python --auth gcp-id-token --out ./clien
 
 # With dataclasses instead of Pydantic
 oapi-liteclient --spec spec.yaml --lang python --style dataclass --out ./client/
+
+# Generate a Go client
+oapi-liteclient --spec petstore.yaml --lang go --auth api-key --out ./petstore/
 ```
 
-This produces a Python package in the output directory:
+### Python
 
 ```python
 from petstore.client import Client, Pet, PetCreate
@@ -45,43 +48,55 @@ with Client("https://petstore.example.com/v1") as c:
     pet = c.get_pet(pet_id=1)
 ```
 
+### Go
+
+```go
+import "myproject/petstore"
+
+client := petstore.NewClient("https://petstore.example.com/v1", nil, "my-api-key")
+
+pets, err := client.ListPets(ctx).Limit(10).Do()
+pet, err := client.CreatePet(ctx, petstore.PetCreate{Name: "Buddy"}).Do()
+pet, err := client.GetPet(ctx, 1).Do()
+err := client.DeletePet(ctx, 1).Do()
+```
+
 ## Flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--spec` | (required) | Path or URL to OpenAPI spec (YAML or JSON) |
-| `--lang` | `python` | Target language |
-| `--style` | `pydantic` | Model style: `pydantic` or `dataclass` |
+| `--lang` | `python` | Target language: `python` or `go` |
+| `--style` | `pydantic` | Model style (Python only): `pydantic` or `dataclass` |
 | `--auth` | `none` | Auth strategy (see below) |
 | `--out` | `./client` | Output directory |
 
 ## Auth Strategies
 
-| Strategy | Description |
-|----------|-------------|
-| `none` | No auth code generated |
-| `custom` | `auth: Callable[[], dict[str, str]]` parameter — caller provides a function returning headers |
-| `bearer-token` | `bearer_token: str` parameter, sent as `Authorization: Bearer <token>` |
-| `api-key` | `api_key: str` parameter with configurable header name (default `X-API-Key`) |
-| `gcp-id-token` | Google Cloud ID token with automatic caching (55 min). For calling Cloud Run services |
+| Strategy | Python | Go |
+|----------|--------|-----|
+| `none` | No auth code | No auth code |
+| `custom` | `auth: Callable` returning headers | `authFunc func(req *http.Request)` |
+| `bearer-token` | `bearer_token: str` | `bearerToken string` |
+| `api-key` | `api_key: str` with configurable header | `apiKey string` with configurable header |
+| `gcp-id-token` | `google.oauth2.id_token` with 55 min cache | `google.golang.org/api/idtoken` TokenSource |
 
 ## Supported Languages
 
 | Language | Output | Models | HTTP Library | Status |
 |----------|--------|--------|-------------|--------|
 | Python | `client.py` | Pydantic or dataclass | httpx | Available |
+| Go | `client.go` | structs with JSON tags | net/http | Available |
 | TypeScript | `client.ts` | interfaces | fetch | Planned |
-| Go | `client.go` | structs | net/http | Planned |
 
 ## What Gets Generated
 
 For a typical 3-5 endpoint API, the output is a single file (~100-200 lines) containing:
 
-- **Models** — Pydantic `BaseModel` classes (or dataclasses) with typed fields, defaults, and aliases for camelCase/reserved words
-- **Client** — one method per endpoint with typed parameters and return values
-- **Docstrings** — from operation `summary` or `description` in the spec
+- **Models** — Pydantic `BaseModel` classes (Python) or structs with JSON tags (Go)
+- **Client** — one method per endpoint with typed parameters and return values. Go uses a request builder pattern with chained setters and `Do()`
 - **Auth** — baked-in strategy based on `--auth` flag
-- **Errors** — exception raised on non-2xx responses
+- **Errors** — `APIError` exception (Python) or `*APIError` implementing `error` (Go)
 
 ## OpenAPI Support
 

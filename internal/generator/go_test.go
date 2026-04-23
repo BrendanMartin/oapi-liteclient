@@ -588,3 +588,99 @@ func TestGenerateGoAuthDefaultIsNone(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateGoPetstore(t *testing.T) {
+	spec := &ir.Spec{
+		Title:   "Petstore",
+		BaseURL: "https://petstore.example.com/v1",
+		Auth:    &ir.Auth{Type: ir.AuthAPIKey, Name: "X-API-Key", In: "header"},
+		Models: []ir.Model{
+			{
+				Name: "Pet",
+				Fields: []ir.Field{
+					{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true},
+					{Name: "name", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true},
+					{Name: "tag", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: false},
+				},
+			},
+			{
+				Name: "PetCreate",
+				Fields: []ir.Field{
+					{Name: "name", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true},
+					{Name: "tag", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: false},
+				},
+			},
+		},
+		Endpoints: []ir.Endpoint{
+			{
+				OperationID: "listPets",
+				Summary:     "List all pets",
+				Method:      "GET",
+				Path:        "/pets",
+				Params: []ir.Param{
+					{Name: "limit", In: "query", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: false},
+					{Name: "tag", In: "query", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: false},
+				},
+				ResponseType: &ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypeRef, Ref: "Pet"}},
+			},
+			{
+				OperationID:  "createPet",
+				Summary:      "Create a pet",
+				Method:       "POST",
+				Path:         "/pets",
+				RequestBody:  &ir.Type{Kind: ir.TypeRef, Ref: "PetCreate"},
+				ResponseType: &ir.Type{Kind: ir.TypeRef, Ref: "Pet"},
+			},
+			{
+				OperationID:  "getPet",
+				Method:       "GET",
+				Path:         "/pets/{petId}",
+				Params:       []ir.Param{{Name: "petId", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}},
+				ResponseType: &ir.Type{Kind: ir.TypeRef, Ref: "Pet"},
+			},
+			{
+				OperationID: "deletePet",
+				Method:      "DELETE",
+				Path:        "/pets/{petId}",
+				Params:      []ir.Param{{Name: "petId", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}},
+			},
+		},
+	}
+
+	output, err := GenerateGo(spec, GoOptions{Auth: "api-key", Package: "petstore"})
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+
+	if _, err := format.Source([]byte(output)); err != nil {
+		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
+	}
+
+	checks := []string{
+		"package petstore",
+		"type Pet struct {",
+		"type PetCreate struct {",
+		"type Client struct {",
+		"type ListPetsRequest struct {",
+		"type CreatePetRequest struct {",
+		"type GetPetRequest struct {",
+		"type DeletePetRequest struct {",
+		"func (c *Client) ListPets(ctx context.Context) *ListPetsRequest {",
+		"func (r *ListPetsRequest) Limit(v int) *ListPetsRequest {",
+		"func (r *ListPetsRequest) Tag(v string) *ListPetsRequest {",
+		"func (r *ListPetsRequest) Do() ([]Pet, error) {",
+		"func (c *Client) CreatePet(ctx context.Context, body PetCreate) *CreatePetRequest {",
+		"func (r *CreatePetRequest) Do() (Pet, error) {",
+		"func (c *Client) GetPet(ctx context.Context, petId int) *GetPetRequest {",
+		"func (r *GetPetRequest) Do() (Pet, error) {",
+		"func (c *Client) DeletePet(ctx context.Context, petId int) *DeletePetRequest {",
+		"func (r *DeletePetRequest) Do() error {",
+		"apiKey",
+		"apiKeyHeader",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("output missing %q", check)
+		}
+	}
+}
