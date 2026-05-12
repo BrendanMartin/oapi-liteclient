@@ -42,7 +42,7 @@ oapi-liteclient --spec petstore.yaml --lang go --auth api-key --out ./petstore/
 ```python
 from petstore.client import Client, Pet, PetCreate
 
-with Client("https://petstore.example.com/v1") as c:
+with Client("https://petstore.example.com/v1", bearer_token="sk-...") as c:
     pets = c.list_pets(limit=10)
     new_pet = c.create_pet(PetCreate(name="Buddy"))
     pet = c.get_pet(pet_id=1)
