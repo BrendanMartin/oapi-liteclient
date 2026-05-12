@@ -18,6 +18,7 @@ func main() {
 	style := flag.String("style", "pydantic", "Model style for Python: pydantic (default) or dataclass")
 	auth := flag.String("auth", "", "Auth strategy: none, custom, bearer-token, gcp-id-token, api-key (auto-detected from spec if omitted)")
 	out := flag.String("out", "./client", "Output directory")
+	force := flag.Bool("force", false, "Overwrite output directory if it exists")
 	version := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 
@@ -68,6 +69,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	if info, err := os.Stat(*out); err == nil && info.IsDir() {
+		if !*force {
+			fmt.Fprintf(os.Stderr, "error: output directory %q already exists (use --force to overwrite)\n", *out)
+			os.Exit(1)
+		}
+		if err := os.RemoveAll(*out); err != nil {
+			fmt.Fprintf(os.Stderr, "error cleaning output dir: %v\n", err)
+			os.Exit(1)
+		}
+	}
 	if err := os.MkdirAll(*out, 0o755); err != nil {
 		fmt.Fprintf(os.Stderr, "error creating output dir: %v\n", err)
 		os.Exit(1)

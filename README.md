@@ -70,6 +70,8 @@ err := client.DeletePet(ctx, 1).Do()
 | `--style` | `pydantic` | Model style (Python only): `pydantic` or `dataclass` |
 | `--auth` | `none` | Auth strategy (see below) |
 | `--out` | `./client` | Output directory |
+| `--force` | `false` | Overwrite output directory if it exists |
+| `--version` | | Print version and exit |
 
 ## Auth Strategies
 
