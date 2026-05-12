@@ -96,6 +96,33 @@ func tagToClassName(tag string) string {
 	return b.String()
 }
 
+// mergeTagsByPrefix merges tags that share a common prefix into a single group.
+// Tags are sorted alphabetically first, so shorter prefixes establish groups
+// before longer variants are encountered. A tag matches a prefix if it equals
+// the prefix or starts with the prefix followed by a space.
+func mergeTagsByPrefix(groups map[string][]ir.Endpoint) map[string][]ir.Endpoint {
+	tags := sortedTags(groups)
+	merged := make(map[string][]ir.Endpoint)
+	var prefixes []string
+
+	for _, tag := range tags {
+		matched := false
+		for _, prefix := range prefixes {
+			if tag == prefix || strings.HasPrefix(tag, prefix+" ") {
+				merged[prefix] = append(merged[prefix], groups[tag]...)
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			prefixes = append(prefixes, tag)
+			merged[tag] = append(merged[tag], groups[tag]...)
+		}
+	}
+
+	return merged
+}
+
 // sortedTags returns tag names in sorted order for deterministic output.
 func sortedTags(groups map[string][]ir.Endpoint) []string {
 	tags := make([]string, 0, len(groups))

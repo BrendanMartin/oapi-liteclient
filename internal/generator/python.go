@@ -107,6 +107,8 @@ func GeneratePython(spec *ir.Spec, opts PythonOptions) (map[string]string, error
 		return map[string]string{"client.py": buf.String()}, nil
 	}
 
+	groups = mergeTagsByPrefix(groups)
+
 	if err := validateTagFilenames(groups); err != nil {
 		return nil, err
 	}

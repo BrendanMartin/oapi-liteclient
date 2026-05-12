@@ -507,6 +507,60 @@ func TestGeneratePythonTagSplit(t *testing.T) {
 	}
 }
 
+func TestGeneratePythonTagMerge(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Invoice API",
+		Models: []ir.Model{
+			{Name: "Invoice", Fields: []ir.Field{{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}}},
+			{Name: "InvoiceLineItem", Fields: []ir.Field{{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}}},
+		},
+		Endpoints: []ir.Endpoint{
+			{OperationID: "listInvoices", Method: "GET", Path: "/invoices", Tags: []string{"Invoice"},
+				ResponseType: &ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypeRef, Ref: "Invoice"}}},
+			{OperationID: "getInvoiceLineItem", Method: "GET", Path: "/invoices/{id}/line-items/{lineId}", Tags: []string{"Invoice Line Item"},
+				Params: []ir.Param{
+					{Name: "id", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true},
+					{Name: "lineId", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true},
+				},
+				ResponseType: &ir.Type{Kind: ir.TypeRef, Ref: "InvoiceLineItem"}},
+			{OperationID: "listCustomers", Method: "GET", Path: "/customers", Tags: []string{"Customer"}},
+		},
+	}
+
+	files := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic"})
+
+	if _, ok := files["invoice_line_item.py"]; ok {
+		t.Error("Invoice Line Item should be merged into invoice.py, not its own file")
+	}
+
+	invoice, ok := files["invoice.py"]
+	if !ok {
+		t.Fatal("missing invoice.py")
+	}
+	if !strings.Contains(invoice, "class InvoiceClient:") {
+		t.Error("invoice.py should contain InvoiceClient class")
+	}
+	if !strings.Contains(invoice, "def list_invoices(") {
+		t.Error("invoice.py should contain list_invoices method")
+	}
+	if !strings.Contains(invoice, "def get_invoice_line_item(") {
+		t.Error("invoice.py should contain get_invoice_line_item (merged from Invoice Line Item tag)")
+	}
+
+	if _, ok := files["customer.py"]; !ok {
+		t.Error("customer.py should still exist as a separate file")
+	}
+
+	if client, ok := files["client.py"]; ok {
+		if !strings.Contains(client, "self.invoice = InvoiceClient(self)") {
+			t.Error("client.py should have invoice attribute, not invoice_line_item")
+		}
+		if strings.Contains(client, "InvoiceLineItemClient") {
+			t.Error("client.py should not have a separate InvoiceLineItemClient")
+		}
+	}
+}
+
 func TestGeneratePythonNoTagsSingleFile(t *testing.T) {
 	spec := &ir.Spec{
 		Title: "Simple API",

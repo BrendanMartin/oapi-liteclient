@@ -83,6 +83,57 @@ func TestGroupEndpointsByTagNoTags(t *testing.T) {
 	}
 }
 
+func TestMergeTagsByPrefix(t *testing.T) {
+	groups := map[string][]ir.Endpoint{
+		"Invoice":                              {{OperationID: "listInvoices"}},
+		"Invoice Line Item":                    {{OperationID: "listInvoiceLineItems"}},
+		"Invoice Tax Line Item":                {{OperationID: "listInvoiceTaxLineItems"}},
+		"Invoice Deposit Adjustment Line Item": {{OperationID: "listInvoiceDepositAdjustments"}},
+		"Customer":                             {{OperationID: "listCustomers"}},
+		"Customer Address":                     {{OperationID: "listCustomerAddresses"}},
+		"Inventory":                            {{OperationID: "listInventory"}},
+		"InProcessTrackingFieldType":           {{OperationID: "listTracking"}},
+		"CAPAs":                                {{OperationID: "listCAPAs"}},
+	}
+
+	merged := mergeTagsByPrefix(groups)
+
+	if len(merged["Invoice"]) != 4 {
+		t.Errorf("expected 4 Invoice endpoints, got %d", len(merged["Invoice"]))
+	}
+	if len(merged["Customer"]) != 2 {
+		t.Errorf("expected 2 Customer endpoints, got %d", len(merged["Customer"]))
+	}
+	if len(merged["Inventory"]) != 1 {
+		t.Errorf("expected 1 Inventory endpoint, got %d", len(merged["Inventory"]))
+	}
+	if len(merged["InProcessTrackingFieldType"]) != 1 {
+		t.Errorf("InProcessTrackingFieldType should not merge with Inventory")
+	}
+	if len(merged["CAPAs"]) != 1 {
+		t.Errorf("expected 1 CAPAs endpoint, got %d", len(merged["CAPAs"]))
+	}
+	if _, ok := merged["Invoice Line Item"]; ok {
+		t.Error("Invoice Line Item should have been merged into Invoice")
+	}
+	if _, ok := merged["Customer Address"]; ok {
+		t.Error("Customer Address should have been merged into Customer")
+	}
+}
+
+func TestMergeTagsByPrefixNoMerge(t *testing.T) {
+	groups := map[string][]ir.Endpoint{
+		"Pets":  {{OperationID: "listPets"}},
+		"Users": {{OperationID: "listUsers"}},
+	}
+
+	merged := mergeTagsByPrefix(groups)
+
+	if len(merged) != 2 {
+		t.Errorf("expected 2 groups (no merging), got %d", len(merged))
+	}
+}
+
 func TestValidateTagFilenames(t *testing.T) {
 	t.Run("no collision", func(t *testing.T) {
 		groups := map[string][]ir.Endpoint{

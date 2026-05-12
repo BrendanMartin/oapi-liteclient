@@ -753,6 +753,51 @@ func TestGenerateGoTagSplit(t *testing.T) {
 	}
 }
 
+func TestGenerateGoTagMerge(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Invoice API",
+		Models: []ir.Model{
+			{Name: "Invoice", Fields: []ir.Field{{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}}},
+			{Name: "InvoiceLineItem", Fields: []ir.Field{{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}}},
+		},
+		Endpoints: []ir.Endpoint{
+			{OperationID: "listInvoices", Method: "GET", Path: "/invoices", Tags: []string{"Invoice"},
+				ResponseType: &ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypeRef, Ref: "Invoice"}}},
+			{OperationID: "getInvoiceLineItem", Method: "GET", Path: "/invoices/{id}/line-items/{lineId}", Tags: []string{"Invoice Line Item"},
+				Params: []ir.Param{
+					{Name: "id", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true},
+					{Name: "lineId", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true},
+				},
+				ResponseType: &ir.Type{Kind: ir.TypeRef, Ref: "InvoiceLineItem"}},
+			{OperationID: "listCustomers", Method: "GET", Path: "/customers", Tags: []string{"Customer"}},
+		},
+	}
+
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "none", Package: "testapi"})
+
+	if _, ok := files["invoice_line_item.go"]; ok {
+		t.Error("Invoice Line Item should be merged into invoice.go, not its own file")
+	}
+
+	invoice, ok := files["invoice.go"]
+	if !ok {
+		t.Fatal("missing invoice.go")
+	}
+	if !strings.Contains(invoice, "type ListInvoicesOp struct {") {
+		t.Error("invoice.go should contain ListInvoicesOp")
+	}
+	if !strings.Contains(invoice, "type GetInvoiceLineItemOp struct {") {
+		t.Error("invoice.go should contain GetInvoiceLineItemOp (merged from Invoice Line Item tag)")
+	}
+	if _, err := format.Source([]byte(invoice)); err != nil {
+		t.Errorf("invoice.go is not valid Go: %v", err)
+	}
+
+	if _, ok := files["customer.go"]; !ok {
+		t.Error("customer.go should still exist as a separate file")
+	}
+}
+
 func TestGenerateGoNoTagsSingleFile(t *testing.T) {
 	spec := &ir.Spec{
 		Title: "Simple API",
