@@ -76,7 +76,7 @@ func buildIR(model *libopenapi.DocumentModel[v3.Document]) *ir.Spec {
 			if schema == nil {
 				continue
 			}
-			m := buildModel(name, schema)
+			m := buildModel(sanitizeName(name), schema)
 			spec.Models = append(spec.Models, m)
 		}
 	}
@@ -218,6 +218,7 @@ func buildEndpoints(path string, pathItem *v3.PathItem) []ir.Endpoint {
 			Description: op.Description,
 			Method:      method,
 			Path:        path,
+			Tags:        op.Tags,
 		}
 
 		// Parameters
@@ -239,7 +240,7 @@ func buildEndpoints(path string, pathItem *v3.PathItem) []ir.Endpoint {
 		// Request body
 		if op.RequestBody != nil && op.RequestBody.Content != nil {
 			for mediaType, content := range op.RequestBody.Content.FromOldest() {
-				if mediaType == "application/json" && content.Schema != nil {
+				if isJSONMediaType(mediaType) && content.Schema != nil {
 					t := schemaToType(content.Schema)
 					ep.RequestBody = &t
 					break
@@ -255,7 +256,7 @@ func buildEndpoints(path string, pathItem *v3.PathItem) []ir.Endpoint {
 				}
 				if resp.Content != nil {
 					for mediaType, content := range resp.Content.FromOldest() {
-						if mediaType == "application/json" && content.Schema != nil {
+						if isJSONMediaType(mediaType) && content.Schema != nil {
 							t := schemaToType(content.Schema)
 							ep.ResponseType = &t
 							break
@@ -316,11 +317,25 @@ func deriveOperationID(method, path string) string {
 	return strings.Join(parts, "")
 }
 
-// sanitizeName strips a dotted package prefix (e.g. "handler.TaskResponse" → "TaskResponse")
-// common in swaggo-generated Swagger 2.0 specs.
+// isJSONMediaType returns true for media types that carry JSON content.
+func isJSONMediaType(mt string) bool {
+	return mt == "application/json" ||
+		mt == "text/json" ||
+		strings.HasSuffix(mt, "+json")
+}
+
+// sanitizeName produces a valid identifier from a schema name by stripping
+// dotted package prefixes and removing characters that aren't letters, digits,
+// or underscores.
 func sanitizeName(name string) string {
 	if i := strings.LastIndex(name, "."); i >= 0 {
-		return name[i+1:]
+		name = name[i+1:]
 	}
-	return name
+	var b strings.Builder
+	for _, r := range name {
+		if r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }

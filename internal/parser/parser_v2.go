@@ -94,6 +94,7 @@ func buildEndpointsV2(path string, pathItem *v2.PathItem) []ir.Endpoint {
 			Description: op.Description,
 			Method:      method,
 			Path:        path,
+			Tags:        op.Tags,
 		}
 
 		for _, param := range op.Parameters {

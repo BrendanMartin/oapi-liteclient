@@ -15,7 +15,7 @@ func main() {
 	spec := flag.String("spec", "", "Path or URL to OpenAPI spec (YAML or JSON)")
 	lang := flag.String("lang", "python", "Target language (python, go)")
 	style := flag.String("style", "pydantic", "Model style for Python: pydantic (default) or dataclass")
-	auth := flag.String("auth", "none", "Auth strategy: none, custom, bearer-token, gcp-id-token, api-key")
+	auth := flag.String("auth", "", "Auth strategy: none, custom, bearer-token, gcp-id-token, api-key (auto-detected from spec if omitted)")
 	out := flag.String("out", "./client", "Output directory")
 	flag.Parse()
 
@@ -31,18 +31,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	var output string
-	var filename string
+	var files map[string]string
 
 	switch *lang {
 	case "python":
 		opts := generator.PythonOptions{Style: *style, Auth: *auth}
-		output, err = generator.GeneratePython(irSpec, opts)
+		files, err = generator.GeneratePython(irSpec, opts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
-		filename = "client.py"
+		if _, hasInit := files["__init__.py"]; !hasInit {
+			files["__init__.py"] = ""
+		}
 	case "go":
 		pkg := filepath.Base(*out)
 		pkg = strings.ReplaceAll(pkg, "-", "_")
@@ -50,12 +51,11 @@ func main() {
 			pkg = "pkg" + pkg
 		}
 		opts := generator.GoOptions{Auth: *auth, Package: pkg}
-		output, err = generator.GenerateGo(irSpec, opts)
+		files, err = generator.GenerateGo(irSpec, opts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
-		filename = "client.go"
 	default:
 		fmt.Fprintf(os.Stderr, "error: unsupported language %q (supported: python, go)\n", *lang)
 		os.Exit(1)
@@ -66,19 +66,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	outPath := filepath.Join(*out, filename)
-	if err := os.WriteFile(outPath, []byte(output), 0o644); err != nil {
-		fmt.Fprintf(os.Stderr, "error writing output: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Write __init__.py for Python packages
-	if *lang == "python" {
-		if err := os.WriteFile(filepath.Join(*out, "__init__.py"), []byte(""), 0o644); err != nil {
-			fmt.Fprintf(os.Stderr, "error writing __init__.py: %v\n", err)
+	for filename, content := range files {
+		outPath := filepath.Join(*out, filename)
+		if err := os.WriteFile(outPath, []byte(content), 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "error writing %s: %v\n", outPath, err)
 			os.Exit(1)
 		}
+		fmt.Printf("Generated %s\n", outPath)
 	}
-
-	fmt.Printf("Generated %s\n", outPath)
 }

@@ -8,6 +8,15 @@ import (
 	"github.com/brendanmartin/oapi-liteclient/internal/ir"
 )
 
+func mustGenerateGo(t *testing.T, spec *ir.Spec, opts GoOptions) map[string]string {
+	t.Helper()
+	files, err := GenerateGo(spec, opts)
+	if err != nil {
+		t.Fatalf("GenerateGo: %v", err)
+	}
+	return files
+}
+
 func TestGoName(t *testing.T) {
 	tests := []struct {
 		in, want string
@@ -23,6 +32,9 @@ func TestGoName(t *testing.T) {
 		{"list_pets", "ListPets"},
 		{"HTMLParser", "HTMLParser"},
 		{"already_Pascal", "AlreadyPascal"},
+		{"sort.field", "SortField"},
+		{"sort.dir", "SortDir"},
+		{"filter-name", "FilterName"},
 	}
 	for _, tt := range tests {
 		got := goName(tt.in)
@@ -118,10 +130,8 @@ func TestGenerateGoModels(t *testing.T) {
 		},
 	}
 
-	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "petstore"})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "none", Package: "petstore"})
+	output := files["client.go"]
 
 	if _, err := format.Source([]byte(output)); err != nil {
 		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
@@ -165,10 +175,8 @@ func TestGenerateGoNestedModels(t *testing.T) {
 		},
 	}
 
-	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "testapi"})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "none", Package: "testapi"})
+	output := files["client.go"]
 
 	if _, err := format.Source([]byte(output)); err != nil {
 		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
@@ -195,10 +203,8 @@ func TestGenerateGoClientNoAuth(t *testing.T) {
 		},
 	}
 
-	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "testapi"})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "none", Package: "testapi"})
+	output := files["client.go"]
 
 	if _, err := format.Source([]byte(output)); err != nil {
 		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
@@ -249,10 +255,8 @@ func TestGenerateGoSimpleEndpoint(t *testing.T) {
 		},
 	}
 
-	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "petstore"})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "none", Package: "petstore"})
+	output := files["client.go"]
 
 	if _, err := format.Source([]byte(output)); err != nil {
 		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
@@ -291,10 +295,8 @@ func TestGenerateGoOptionalQueryParams(t *testing.T) {
 		},
 	}
 
-	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "petstore"})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "none", Package: "petstore"})
+	output := files["client.go"]
 
 	if _, err := format.Source([]byte(output)); err != nil {
 		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
@@ -336,10 +338,8 @@ func TestGenerateGoRequiredQueryParams(t *testing.T) {
 		},
 	}
 
-	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "testapi"})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "none", Package: "testapi"})
+	output := files["client.go"]
 
 	if _, err := format.Source([]byte(output)); err != nil {
 		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
@@ -373,10 +373,8 @@ func TestGenerateGoRequestBody(t *testing.T) {
 		},
 	}
 
-	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "petstore"})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "none", Package: "petstore"})
+	output := files["client.go"]
 
 	if _, err := format.Source([]byte(output)); err != nil {
 		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
@@ -407,10 +405,8 @@ func TestGenerateGoNoContent(t *testing.T) {
 		},
 	}
 
-	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "petstore"})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "none", Package: "petstore"})
+	output := files["client.go"]
 
 	if _, err := format.Source([]byte(output)); err != nil {
 		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
@@ -438,10 +434,8 @@ func TestGenerateGoArrayResponse(t *testing.T) {
 		},
 	}
 
-	output, err := GenerateGo(spec, GoOptions{Auth: "none", Package: "petstore"})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "none", Package: "petstore"})
+	output := files["client.go"]
 
 	if _, err := format.Source([]byte(output)); err != nil {
 		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
@@ -460,10 +454,8 @@ func TestGenerateGoAuthBearerToken(t *testing.T) {
 		},
 	}
 
-	output, err := GenerateGo(spec, GoOptions{Auth: "bearer-token", Package: "testapi"})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "bearer-token", Package: "testapi"})
+	output := files["client.go"]
 
 	if _, err := format.Source([]byte(output)); err != nil {
 		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
@@ -490,10 +482,8 @@ func TestGenerateGoAuthAPIKey(t *testing.T) {
 		},
 	}
 
-	output, err := GenerateGo(spec, GoOptions{Auth: "api-key", Package: "testapi"})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "api-key", Package: "testapi"})
+	output := files["client.go"]
 
 	if _, err := format.Source([]byte(output)); err != nil {
 		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
@@ -521,10 +511,8 @@ func TestGenerateGoAuthCustom(t *testing.T) {
 		},
 	}
 
-	output, err := GenerateGo(spec, GoOptions{Auth: "custom", Package: "testapi"})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "custom", Package: "testapi"})
+	output := files["client.go"]
 
 	if _, err := format.Source([]byte(output)); err != nil {
 		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
@@ -550,10 +538,8 @@ func TestGenerateGoAuthGCPIDToken(t *testing.T) {
 		},
 	}
 
-	output, err := GenerateGo(spec, GoOptions{Auth: "gcp-id-token", Package: "testapi"})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "gcp-id-token", Package: "testapi"})
+	output := files["client.go"]
 
 	checks := []string{
 		`"google.golang.org/api/idtoken"`,
@@ -576,10 +562,8 @@ func TestGenerateGoAuthDefaultIsNone(t *testing.T) {
 		},
 	}
 
-	output, err := GenerateGo(spec, GoOptions{Package: "testapi"})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
+	files := mustGenerateGo(t, spec, GoOptions{Package: "testapi"})
+	output := files["client.go"]
 
 	noChecks := []string{"bearerToken", "apiKey", "authFunc", "idtoken", "tokenSource"}
 	for _, check := range noChecks {
@@ -647,10 +631,8 @@ func TestGenerateGoPetstore(t *testing.T) {
 		},
 	}
 
-	output, err := GenerateGo(spec, GoOptions{Auth: "api-key", Package: "petstore"})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "api-key", Package: "petstore"})
+	output := files["client.go"]
 
 	if _, err := format.Source([]byte(output)); err != nil {
 		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
@@ -682,5 +664,109 @@ func TestGenerateGoPetstore(t *testing.T) {
 		if !strings.Contains(output, check) {
 			t.Errorf("output missing %q", check)
 		}
+	}
+}
+
+// --- Tag-based splitting tests ---
+
+func TestGenerateGoTagSplit(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Tagged API",
+		Models: []ir.Model{
+			{Name: "Pet", Fields: []ir.Field{{Name: "name", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true}}},
+			{Name: "User", Fields: []ir.Field{{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}}},
+		},
+		Endpoints: []ir.Endpoint{
+			{OperationID: "listPets", Method: "GET", Path: "/pets", Tags: []string{"Pets"},
+				ResponseType: &ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypeRef, Ref: "Pet"}}},
+			{OperationID: "createPet", Method: "POST", Path: "/pets", Tags: []string{"Pets"},
+				RequestBody: &ir.Type{Kind: ir.TypeRef, Ref: "Pet"}},
+			{OperationID: "getUser", Method: "GET", Path: "/users/{userId}", Tags: []string{"Users"},
+				Params:       []ir.Param{{Name: "userId", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}},
+				ResponseType: &ir.Type{Kind: ir.TypeRef, Ref: "User"}},
+		},
+	}
+
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "none", Package: "myapi"})
+
+	expectedFiles := []string{"errors.go", "models.go", "client.go", "pets.go", "users.go"}
+	for _, f := range expectedFiles {
+		content, ok := files[f]
+		if !ok {
+			t.Errorf("missing expected file %q", f)
+			continue
+		}
+		if _, err := format.Source([]byte(content)); err != nil {
+			t.Errorf("%s is not valid Go: %v\n%s", f, err, content)
+		}
+		if !strings.Contains(content, "package myapi") {
+			t.Errorf("%s missing package declaration", f)
+		}
+	}
+
+	if errors, ok := files["errors.go"]; ok {
+		if !strings.Contains(errors, "type APIError struct {") {
+			t.Error("errors.go should contain APIError")
+		}
+	}
+
+	if models, ok := files["models.go"]; ok {
+		if !strings.Contains(models, "type Pet struct {") {
+			t.Error("models.go should contain Pet struct")
+		}
+		if !strings.Contains(models, "type User struct {") {
+			t.Error("models.go should contain User struct")
+		}
+	}
+
+	if client, ok := files["client.go"]; ok {
+		if !strings.Contains(client, "type Client struct {") {
+			t.Error("client.go should contain Client struct")
+		}
+		if !strings.Contains(client, "func NewClient(") {
+			t.Error("client.go should contain NewClient")
+		}
+		if !strings.Contains(client, "func (c *Client) do(") {
+			t.Error("client.go should contain do method")
+		}
+	}
+
+	if pets, ok := files["pets.go"]; ok {
+		if !strings.Contains(pets, "type ListPetsOp struct {") {
+			t.Error("pets.go should contain ListPetsOp")
+		}
+		if !strings.Contains(pets, "func (c *Client) ListPets(") {
+			t.Error("pets.go should contain ListPets method")
+		}
+		if !strings.Contains(pets, "type CreatePetOp struct {") {
+			t.Error("pets.go should contain CreatePetOp")
+		}
+	}
+
+	if users, ok := files["users.go"]; ok {
+		if !strings.Contains(users, "type GetUserOp struct {") {
+			t.Error("users.go should contain GetUserOp")
+		}
+		if !strings.Contains(users, "func (c *Client) GetUser(") {
+			t.Error("users.go should contain GetUser method")
+		}
+	}
+}
+
+func TestGenerateGoNoTagsSingleFile(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Simple API",
+		Endpoints: []ir.Endpoint{
+			{OperationID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "none", Package: "testapi"})
+
+	if len(files) != 1 {
+		t.Errorf("expected 1 file for no-tag spec, got %d", len(files))
+	}
+	if _, ok := files["client.go"]; !ok {
+		t.Error("no-tag spec should produce client.go")
 	}
 }

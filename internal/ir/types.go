@@ -71,6 +71,7 @@ type Endpoint struct {
 	Description  string // longer description from spec
 	Method       string // GET, POST, PUT, DELETE, PATCH
 	Path         string // e.g. /pets/{petId}
+	Tags         []string
 	Params       []Param
 	RequestBody  *Type // nil if no body
 	ResponseType *Type // nil if no response body (e.g. 204)

@@ -3,11 +3,29 @@ package generator
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"text/template"
 	"unicode"
 
 	"github.com/brendanmartin/oapi-liteclient/internal/ir"
 )
+
+// resolveAuth returns the auth mode string. If explicit is set, it wins;
+// otherwise the mode is inferred from the spec's security schemes.
+func resolveAuth(explicit string, spec *ir.Spec) string {
+	if explicit != "" {
+		return explicit
+	}
+	if spec.Auth != nil {
+		switch spec.Auth.Type {
+		case ir.AuthBearer:
+			return "bearer-token"
+		case ir.AuthAPIKey:
+			return "api-key"
+		}
+	}
+	return "none"
+}
 
 // PythonOptions configures the Python code generator.
 type PythonOptions struct {
@@ -58,22 +76,118 @@ var funcMap = template.FuncMap{
 var pydanticTmpl = template.Must(template.New("pydantic").Funcs(funcMap).Parse(pydanticTemplate))
 var dataclassTmpl = template.Must(template.New("dataclass").Funcs(funcMap).Parse(dataclassTemplate))
 
+// Split-mode templates (pydantic)
+var pyBaseTmpl = template.Must(template.New("pyBase").Funcs(funcMap).Parse(pyBaseTemplate))
+var pyModelsTmpl = template.Must(template.New("pyModels").Funcs(funcMap).Parse(pyModelsTemplate))
+var pyTagTmpl = template.Must(template.New("pyTag").Funcs(funcMap).Parse(pyTagTemplate))
+var pyClientTmpl = template.Must(template.New("pyClient").Funcs(funcMap).Parse(pyClientTemplate))
+var pyInitTmpl = template.Must(template.New("pyInit").Funcs(funcMap).Parse(pyInitTemplate))
+
+// Split-mode templates (dataclass)
+var pyBaseDcTmpl = template.Must(template.New("pyBaseDc").Funcs(funcMap).Parse(pyBaseDcTemplate))
+var pyModelsDcTmpl = template.Must(template.New("pyModelsDc").Funcs(funcMap).Parse(pyModelsDcTemplate))
+var pyTagDcTmpl = template.Must(template.New("pyTagDc").Funcs(funcMap).Parse(pyTagDcTemplate))
+
 // GeneratePython generates a Python client from the IR spec.
-func GeneratePython(spec *ir.Spec, opts PythonOptions) (string, error) {
-	tmpl := pydanticTmpl
-	if opts.Style == "dataclass" {
-		tmpl = dataclassTmpl
+// Returns a map of filename → content. Single-file when no tags are present.
+func GeneratePython(spec *ir.Spec, opts PythonOptions) (map[string]string, error) {
+	authMode := resolveAuth(opts.Auth, spec)
+
+	groups, hasTags := groupEndpointsByTag(spec.Endpoints)
+	if !hasTags {
+		tmpl := pydanticTmpl
+		if opts.Style == "dataclass" {
+			tmpl = dataclassTmpl
+		}
+		data := pythonData{Spec: spec, AuthMode: authMode}
+		var buf bytes.Buffer
+		if err := tmpl.Execute(&buf, data); err != nil {
+			return nil, fmt.Errorf("executing template: %w", err)
+		}
+		return map[string]string{"client.py": buf.String()}, nil
 	}
-	authMode := opts.Auth
-	if authMode == "" {
-		authMode = "none"
+
+	if err := validateTagFilenames(groups); err != nil {
+		return nil, err
 	}
-	data := pythonData{Spec: spec, AuthMode: authMode}
+
+	isPydantic := opts.Style != "dataclass"
+	files := make(map[string]string)
+
+	// _base.py
+	baseData := pythonData{Spec: spec, AuthMode: authMode}
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return "", fmt.Errorf("executing template: %w", err)
+	baseTmpl := pyBaseTmpl
+	if !isPydantic {
+		baseTmpl = pyBaseDcTmpl
 	}
-	return buf.String(), nil
+	if err := baseTmpl.Execute(&buf, baseData); err != nil {
+		return nil, fmt.Errorf("executing base template: %w", err)
+	}
+	files["_base.py"] = buf.String()
+
+	// _models.py
+	buf.Reset()
+	modelsTmpl := pyModelsTmpl
+	if !isPydantic {
+		modelsTmpl = pyModelsDcTmpl
+	}
+	if err := modelsTmpl.Execute(&buf, spec); err != nil {
+		return nil, fmt.Errorf("executing models template: %w", err)
+	}
+	files["_models.py"] = buf.String()
+
+	// Per-tag files
+	type tagFileData struct {
+		ClassName string
+		Endpoints []ir.Endpoint
+	}
+	tags := sortedTags(groups)
+	var tagClassNames []struct{ Attr, ClassName, Module string }
+	for _, tag := range tags {
+		fn := tagToFilename(tag)
+		cn := tagToClassName(tag) + "Client"
+		tagClassNames = append(tagClassNames, struct{ Attr, ClassName, Module string }{
+			Attr:      fn,
+			ClassName: cn,
+			Module:    fn,
+		})
+		buf.Reset()
+		td := tagFileData{ClassName: cn, Endpoints: groups[tag]}
+		tagTmpl := pyTagTmpl
+		if !isPydantic {
+			tagTmpl = pyTagDcTmpl
+		}
+		if err := tagTmpl.Execute(&buf, td); err != nil {
+			return nil, fmt.Errorf("executing tag template for %q: %w", tag, err)
+		}
+		files[fn+".py"] = buf.String()
+	}
+
+	// client.py
+	buf.Reset()
+	clientData := struct {
+		Title    string
+		AuthMode string
+		Tags     []struct{ Attr, ClassName, Module string }
+	}{
+		Title:    spec.Title,
+		AuthMode: authMode,
+		Tags:     tagClassNames,
+	}
+	if err := pyClientTmpl.Execute(&buf, clientData); err != nil {
+		return nil, fmt.Errorf("executing client template: %w", err)
+	}
+	files["client.py"] = buf.String()
+
+	// __init__.py
+	buf.Reset()
+	if err := pyInitTmpl.Execute(&buf, clientData); err != nil {
+		return nil, fmt.Errorf("executing init template: %w", err)
+	}
+	files["__init__.py"] = buf.String()
+
+	return files, nil
 }
 
 func pyType(t ir.Type) string {
@@ -116,7 +230,8 @@ var pythonReserved = map[string]bool{
 	"type": true,
 }
 
-// pyName converts a field name to snake_case, appending _ for reserved words.
+// pyName converts a field name to a valid Python snake_case identifier,
+// appending _ for reserved words.
 func pyName(name string) string {
 	var result []rune
 	for i, r := range name {
@@ -128,6 +243,8 @@ func pyName(name string) string {
 				}
 			}
 			result = append(result, unicode.ToLower(r))
+		} else if r == '.' || r == '-' || r == ' ' {
+			result = append(result, '_')
 		} else {
 			result = append(result, r)
 		}
@@ -170,13 +287,20 @@ func pyDefaultVal(f ir.Field) string {
 	return `"` + val + `"`
 }
 
-// docstring returns a Python docstring from summary/description, or empty string.
+// docstring returns a single-line docstring with METHOD /path and summary/description.
 func docstring(ep ir.Endpoint) string {
+	prefix := ep.Method + " " + ep.Path
 	text := ep.Summary
 	if text == "" {
 		text = ep.Description
 	}
-	return text
+	if text != "" {
+		if i := strings.IndexAny(text, "\r\n"); i >= 0 {
+			text = text[:i]
+		}
+		return prefix + " — " + text
+	}
+	return prefix
 }
 
 // sortedFields returns fields ordered for valid dataclass definitions:
@@ -641,6 +765,497 @@ class Client:
 {{- end}}
 {{- end}}
         resp = self._request(
+            "{{.Method}}",
+            f"{{fmtPath .Path}}",
+{{- if hasBody .RequestBody}}
+{{- if isArrayBody .RequestBody}}
+            json=[item.__dict__ for item in req] if req and hasattr(req[0], "__dict__") else req,
+{{- else}}
+            json=req.__dict__ if hasattr(req, "__dict__") else req,
+{{- end}}
+{{- end}}
+{{- if queryParams .Params}}
+            params=params,
+{{- end}}
+        )
+{{- if hasResponse .ResponseType}}
+{{- if eq .ResponseType.Kind 2}}
+        return {{pyType .ResponseType}}(**resp.json())
+{{- else if eq .ResponseType.Kind 1}}
+{{- if .ResponseType.Elem}}{{- if eq .ResponseType.Elem.Kind 2}}
+        return [{{pyTypeDeref .ResponseType.Elem}}(**item) for item in resp.json()]
+{{- else}}
+        return resp.json()
+{{- end}}{{- else}}
+        return resp.json()
+{{- end}}
+{{- else}}
+        return resp.json()
+{{- end}}
+{{- else}}
+        return None
+{{- end}}
+{{end}}`
+
+// --- Split-mode template strings (pydantic) ---
+
+const pyBaseTemplate = `"""Auto-generated base client for {{.Title}}."""
+from __future__ import annotations
+
+import httpx
+{{- if eq .AuthMode "custom"}}
+from collections.abc import Callable
+{{- end}}
+{{- if eq .AuthMode "gcp-id-token"}}
+import time
+import google.auth.transport.requests
+import google.oauth2.id_token
+{{- end}}
+from typing import Optional
+
+
+class APIError(Exception):
+    """Raised on non-2xx responses."""
+
+    def __init__(self, status_code: int, body: str, method: str, path: str):
+        self.status_code = status_code
+        self.body = body
+        self.method = method
+        self.path = path
+        super().__init__(f"{method} {path} returned {status_code}: {body}")
+
+
+class BaseClient:
+    """Base API client with auth and HTTP handling."""
+
+    def __init__(
+        self,
+        base_url: str,
+{{- if eq .AuthMode "custom"}}
+        auth: Callable[[], dict[str, str]] | None = None,
+{{- end}}
+{{- if eq .AuthMode "bearer-token"}}
+        bearer_token: str = "",
+{{- end}}
+{{- if eq .AuthMode "api-key"}}
+        api_key: str = "",
+        api_key_header: str = "X-API-Key",
+{{- end}}
+        timeout: float = 30.0,
+    ):
+        self.base_url = base_url.rstrip("/")
+{{- if eq .AuthMode "custom"}}
+        self._auth = auth
+{{- end}}
+{{- if eq .AuthMode "bearer-token"}}
+        self._bearer_token = bearer_token
+{{- end}}
+{{- if eq .AuthMode "api-key"}}
+        self._api_key = api_key
+        self._api_key_header = api_key_header
+{{- end}}
+{{- if eq .AuthMode "gcp-id-token"}}
+        self._token: str | None = None
+        self._token_expiry: float = 0
+{{- end}}
+        self._client = httpx.Client(
+            base_url=self.base_url,
+            timeout=timeout,
+        )
+{{- if eq .AuthMode "gcp-id-token"}}
+
+    def _get_auth_headers(self) -> dict[str, str]:
+        """Get a cached ID token for Cloud Run IAM authentication."""
+        now = time.time()
+        if self._token is None or now >= self._token_expiry:
+            auth_req = google.auth.transport.requests.Request()
+            self._token = google.oauth2.id_token.fetch_id_token(auth_req, self.base_url)
+            self._token_expiry = now + 3300  # Refresh 5 min before 1h expiry
+        return {"Authorization": f"Bearer {self._token}"}
+{{- end}}
+
+    def close(self):
+        self._client.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+    def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
+{{- if eq .AuthMode "custom"}}
+        if self._auth:
+            headers = kwargs.pop("headers", {})
+            headers.update(self._auth())
+            kwargs["headers"] = headers
+{{- end}}
+{{- if eq .AuthMode "bearer-token"}}
+        if self._bearer_token:
+            headers = kwargs.pop("headers", {})
+            headers["Authorization"] = f"Bearer {self._bearer_token}"
+            kwargs["headers"] = headers
+{{- end}}
+{{- if eq .AuthMode "api-key"}}
+        if self._api_key:
+            headers = kwargs.pop("headers", {})
+            headers[self._api_key_header] = self._api_key
+            kwargs["headers"] = headers
+{{- end}}
+{{- if eq .AuthMode "gcp-id-token"}}
+        headers = kwargs.pop("headers", {})
+        headers.update(self._get_auth_headers())
+        kwargs["headers"] = headers
+{{- end}}
+        resp = self._client.request(method, path, **kwargs)
+        if resp.status_code >= 400:
+            raise APIError(resp.status_code, resp.text, method, path)
+        return resp
+`
+
+const pyModelsTemplate = `"""Auto-generated models."""
+from __future__ import annotations
+
+from pydantic import BaseModel, Field
+from typing import Optional
+
+{{range .Models}}
+class {{.Name}}(BaseModel):
+{{- range .Fields}}
+{{- if needsAlias .}}
+{{- if .Required}}
+{{- if hasDefault .}}
+    {{pyName .Name}}: {{pyType .Type}} = Field({{pyDefaultVal .}}, alias="{{.Name}}")
+{{- else}}
+    {{pyName .Name}}: {{pyType .Type}} = Field(alias="{{.Name}}")
+{{- end}}
+{{- else}}
+{{- if hasDefault .}}
+    {{pyName .Name}}: Optional[{{pyType .Type}}] = Field({{pyDefaultVal .}}, alias="{{.Name}}")
+{{- else}}
+    {{pyName .Name}}: Optional[{{pyType .Type}}] = Field(None, alias="{{.Name}}")
+{{- end}}
+{{- end}}
+{{- else}}
+{{- if .Required}}
+{{- if hasDefault .}}
+    {{pyName .Name}}: {{pyType .Type}} = {{pyDefaultVal .}}
+{{- else}}
+    {{pyName .Name}}: {{pyType .Type}}
+{{- end}}
+{{- else}}
+{{- if hasDefault .}}
+    {{pyName .Name}}: Optional[{{pyType .Type}}] = {{pyDefaultVal .}}
+{{- else}}
+    {{pyName .Name}}: Optional[{{pyType .Type}}] = None
+{{- end}}
+{{- end}}
+{{- end}}
+{{- end}}
+{{- if modelHasAlias .}}
+
+    model_config = {"populate_by_name": True}
+{{- end}}
+{{if not .Fields}}    pass{{end}}
+{{end}}`
+
+const pyTagTemplate = `"""Auto-generated tag client."""
+from __future__ import annotations
+
+from typing import Optional
+
+from ._base import BaseClient
+from ._models import *
+
+
+class {{.ClassName}}:
+    """Sub-client for {{.ClassName}} endpoints."""
+
+    def __init__(self, client: BaseClient):
+        self._client = client
+{{range .Endpoints}}
+{{- if hasParams .}}
+    def {{pyMethodName .OperationID}}(
+        self,
+{{- range pathParams .Params}}
+        {{pyName .Name}}: {{pyType .Type}},
+{{- end}}
+{{- if hasBody .RequestBody}}
+        req: {{pyType .RequestBody}},
+{{- end}}
+{{- range requiredQueryParams .Params}}
+        {{pyName .Name}}: {{pyType .Type}},
+{{- end}}
+{{- range optionalQueryParams .Params}}
+        {{pyName .Name}}: Optional[{{pyType .Type}}] = None,
+{{- end}}
+    ){{- if hasResponse .ResponseType}} -> {{pyType .ResponseType}}{{end}}:
+{{- else}}
+    def {{pyMethodName .OperationID}}(self){{- if hasResponse .ResponseType}} -> {{pyType .ResponseType}}{{end}}:
+{{- end}}
+{{- if docstring .}}
+        """{{docstring .}}"""
+{{- end}}
+{{- if queryParams .Params}}
+        params = {}
+{{- range requiredQueryParams .Params}}
+        params["{{.Name}}"] = {{pyName .Name}}
+{{- end}}
+{{- range optionalQueryParams .Params}}
+        if {{pyName .Name}} is not None:
+            params["{{.Name}}"] = {{pyName .Name}}
+{{- end}}
+{{- end}}
+        resp = self._client._request(
+            "{{.Method}}",
+            f"{{fmtPath .Path}}",
+{{- if hasBody .RequestBody}}
+{{- if isArrayBody .RequestBody}}
+            json=[item.model_dump(exclude_none=True) for item in req],
+{{- else}}
+            json=req.model_dump(exclude_none=True),
+{{- end}}
+{{- end}}
+{{- if queryParams .Params}}
+            params=params,
+{{- end}}
+        )
+{{- if hasResponse .ResponseType}}
+{{- if eq .ResponseType.Kind 2}}
+        return {{pyType .ResponseType}}.model_validate(resp.json())
+{{- else if eq .ResponseType.Kind 1}}
+{{- if .ResponseType.Elem}}{{- if eq .ResponseType.Elem.Kind 2}}
+        return [{{pyTypeDeref .ResponseType.Elem}}.model_validate(item) for item in resp.json()]
+{{- else}}
+        return resp.json()
+{{- end}}{{- else}}
+        return resp.json()
+{{- end}}
+{{- else}}
+        return resp.json()
+{{- end}}
+{{- else}}
+        return None
+{{- end}}
+{{end}}`
+
+const pyClientTemplate = `"""Auto-generated client for {{.Title}}."""
+from __future__ import annotations
+
+from ._base import BaseClient
+{{- range .Tags}}
+from .{{.Module}} import {{.ClassName}}
+{{- end}}
+
+
+class Client(BaseClient):
+    """API client for {{.Title}}."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+{{- range .Tags}}
+        self.{{.Attr}} = {{.ClassName}}(self)
+{{- end}}
+`
+
+const pyInitTemplate = `"""Auto-generated API client for {{.Title}}."""
+from .client import Client
+from ._base import APIError
+
+__all__ = ["Client", "APIError"]
+`
+
+// --- Split-mode template strings (dataclass) ---
+
+const pyBaseDcTemplate = `"""Auto-generated base client for {{.Title}}."""
+from __future__ import annotations
+
+import httpx
+{{- if eq .AuthMode "custom"}}
+from collections.abc import Callable
+{{- end}}
+{{- if eq .AuthMode "gcp-id-token"}}
+import time
+import google.auth.transport.requests
+import google.oauth2.id_token
+{{- end}}
+from typing import Optional
+
+
+class APIError(Exception):
+    """Raised on non-2xx responses."""
+
+    def __init__(self, status_code: int, body: str, method: str, path: str):
+        self.status_code = status_code
+        self.body = body
+        self.method = method
+        self.path = path
+        super().__init__(f"{method} {path} returned {status_code}: {body}")
+
+
+class BaseClient:
+    """Base API client with auth and HTTP handling."""
+
+    def __init__(
+        self,
+        base_url: str,
+{{- if eq .AuthMode "custom"}}
+        auth: Callable[[], dict[str, str]] | None = None,
+{{- end}}
+{{- if eq .AuthMode "bearer-token"}}
+        bearer_token: str = "",
+{{- end}}
+{{- if eq .AuthMode "api-key"}}
+        api_key: str = "",
+        api_key_header: str = "X-API-Key",
+{{- end}}
+        timeout: float = 30.0,
+    ):
+        self.base_url = base_url.rstrip("/")
+{{- if eq .AuthMode "custom"}}
+        self._auth = auth
+{{- end}}
+{{- if eq .AuthMode "bearer-token"}}
+        self._bearer_token = bearer_token
+{{- end}}
+{{- if eq .AuthMode "api-key"}}
+        self._api_key = api_key
+        self._api_key_header = api_key_header
+{{- end}}
+{{- if eq .AuthMode "gcp-id-token"}}
+        self._token: str | None = None
+        self._token_expiry: float = 0
+{{- end}}
+        self._client = httpx.Client(
+            base_url=self.base_url,
+            timeout=timeout,
+        )
+{{- if eq .AuthMode "gcp-id-token"}}
+
+    def _get_auth_headers(self) -> dict[str, str]:
+        """Get a cached ID token for Cloud Run IAM authentication."""
+        now = time.time()
+        if self._token is None or now >= self._token_expiry:
+            auth_req = google.auth.transport.requests.Request()
+            self._token = google.oauth2.id_token.fetch_id_token(auth_req, self.base_url)
+            self._token_expiry = now + 3300  # Refresh 5 min before 1h expiry
+        return {"Authorization": f"Bearer {self._token}"}
+{{- end}}
+
+    def close(self):
+        self._client.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+    def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
+{{- if eq .AuthMode "custom"}}
+        if self._auth:
+            headers = kwargs.pop("headers", {})
+            headers.update(self._auth())
+            kwargs["headers"] = headers
+{{- end}}
+{{- if eq .AuthMode "bearer-token"}}
+        if self._bearer_token:
+            headers = kwargs.pop("headers", {})
+            headers["Authorization"] = f"Bearer {self._bearer_token}"
+            kwargs["headers"] = headers
+{{- end}}
+{{- if eq .AuthMode "api-key"}}
+        if self._api_key:
+            headers = kwargs.pop("headers", {})
+            headers[self._api_key_header] = self._api_key
+            kwargs["headers"] = headers
+{{- end}}
+{{- if eq .AuthMode "gcp-id-token"}}
+        headers = kwargs.pop("headers", {})
+        headers.update(self._get_auth_headers())
+        kwargs["headers"] = headers
+{{- end}}
+        resp = self._client.request(method, path, **kwargs)
+        if resp.status_code >= 400:
+            raise APIError(resp.status_code, resp.text, method, path)
+        return resp
+`
+
+const pyModelsDcTemplate = `"""Auto-generated models."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Optional
+
+{{range .Models}}
+@dataclass
+class {{.Name}}:
+{{- range sortedFields .Fields}}
+{{- if .Required}}
+{{- if hasDefault .}}
+    {{pyName .Name}}: {{pyType .Type}} = {{pyDefaultVal .}}
+{{- else}}
+    {{pyName .Name}}: {{pyType .Type}}
+{{- end}}
+{{- else}}
+{{- if hasDefault .}}
+    {{pyName .Name}}: Optional[{{pyType .Type}}] = {{pyDefaultVal .}}
+{{- else}}
+    {{pyName .Name}}: Optional[{{pyType .Type}}] = None
+{{- end}}
+{{- end}}
+{{- end}}
+{{if not .Fields}}    pass{{end}}
+{{end}}`
+
+const pyTagDcTemplate = `"""Auto-generated tag client."""
+from __future__ import annotations
+
+from typing import Optional
+
+from ._base import BaseClient
+from ._models import *
+
+
+class {{.ClassName}}:
+    """Sub-client for {{.ClassName}} endpoints."""
+
+    def __init__(self, client: BaseClient):
+        self._client = client
+{{range .Endpoints}}
+{{- if hasParams .}}
+    def {{pyMethodName .OperationID}}(
+        self,
+{{- range pathParams .Params}}
+        {{pyName .Name}}: {{pyType .Type}},
+{{- end}}
+{{- if hasBody .RequestBody}}
+        req: {{pyType .RequestBody}},
+{{- end}}
+{{- range requiredQueryParams .Params}}
+        {{pyName .Name}}: {{pyType .Type}},
+{{- end}}
+{{- range optionalQueryParams .Params}}
+        {{pyName .Name}}: Optional[{{pyType .Type}}] = None,
+{{- end}}
+    ){{- if hasResponse .ResponseType}} -> {{pyType .ResponseType}}{{end}}:
+{{- else}}
+    def {{pyMethodName .OperationID}}(self){{- if hasResponse .ResponseType}} -> {{pyType .ResponseType}}{{end}}:
+{{- end}}
+{{- if docstring .}}
+        """{{docstring .}}"""
+{{- end}}
+{{- if queryParams .Params}}
+        params = {}
+{{- range requiredQueryParams .Params}}
+        params["{{.Name}}"] = {{pyName .Name}}
+{{- end}}
+{{- range optionalQueryParams .Params}}
+        if {{pyName .Name}} is not None:
+            params["{{.Name}}"] = {{pyName .Name}}
+{{- end}}
+{{- end}}
+        resp = self._client._request(
             "{{.Method}}",
             f"{{fmtPath .Path}}",
 {{- if hasBody .RequestBody}}

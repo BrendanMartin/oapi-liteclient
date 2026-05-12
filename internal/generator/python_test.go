@@ -7,6 +7,15 @@ import (
 	"github.com/brendanmartin/oapi-liteclient/internal/ir"
 )
 
+func mustGeneratePython(t *testing.T, spec *ir.Spec, opts PythonOptions) map[string]string {
+	t.Helper()
+	files, err := GeneratePython(spec, opts)
+	if err != nil {
+		t.Fatalf("GeneratePython: %v", err)
+	}
+	return files
+}
+
 func TestPyName(t *testing.T) {
 	tests := []struct {
 		in, want string
@@ -17,8 +26,11 @@ func TestPyName(t *testing.T) {
 		{"name", "name"},
 		{"display_name", "display_name"},
 		{"isActive", "is_active"},
-		{"HTMLParser", "htmlparser"}, // consecutive caps stay together
-		{"getURL", "get_url"},        // consecutive caps stay together
+		{"HTMLParser", "htmlparser"},   // consecutive caps stay together
+		{"getURL", "get_url"},          // consecutive caps stay together
+		{"sort.field", "sort_field"},   // dotted param name
+		{"sort.dir", "sort_dir"},       // dotted param name
+		{"filter-name", "filter_name"}, // hyphenated param name
 	}
 	for _, tt := range tests {
 		got := pyName(tt.in)
@@ -111,12 +123,9 @@ func TestGeneratePythonMinimal(t *testing.T) {
 		},
 	}
 
-	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic"})
-	if err != nil {
-		t.Fatalf("GeneratePython: %v", err)
-	}
+	files := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic"})
+	output := files["client.py"]
 
-	// Check key parts are present
 	checks := []string{
 		"class Item(BaseModel):",
 		"id: int",
@@ -144,10 +153,7 @@ func TestGeneratePythonNoAuth(t *testing.T) {
 		},
 	}
 
-	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic", Auth: "none"})
-	if err != nil {
-		t.Fatalf("GeneratePython: %v", err)
-	}
+	output := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic", Auth: "none"})["client.py"]
 
 	if strings.Contains(output, "api_key") || strings.Contains(output, "bearer_token") {
 		t.Error("output should not contain auth params for none mode")
@@ -168,10 +174,7 @@ func TestGeneratePythonAuthCallable(t *testing.T) {
 		},
 	}
 
-	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic", Auth: "custom"})
-	if err != nil {
-		t.Fatalf("GeneratePython: %v", err)
-	}
+	output := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic", Auth: "custom"})["client.py"]
 
 	if !strings.Contains(output, "auth: Callable[[], dict[str, str]] | None = None") {
 		t.Error("output should have auth callable parameter")
@@ -195,10 +198,7 @@ func TestGeneratePythonAuthBearerToken(t *testing.T) {
 		},
 	}
 
-	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic", Auth: "bearer-token"})
-	if err != nil {
-		t.Fatalf("GeneratePython: %v", err)
-	}
+	output := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic", Auth: "bearer-token"})["client.py"]
 
 	if !strings.Contains(output, "bearer_token: str = \"\"") {
 		t.Error("output should have bearer_token parameter")
@@ -222,10 +222,7 @@ func TestGeneratePythonAuthAPIKey(t *testing.T) {
 		},
 	}
 
-	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic", Auth: "api-key"})
-	if err != nil {
-		t.Fatalf("GeneratePython: %v", err)
-	}
+	output := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic", Auth: "api-key"})["client.py"]
 
 	if !strings.Contains(output, "api_key: str = \"\"") {
 		t.Error("output should have api_key parameter")
@@ -249,10 +246,7 @@ func TestGeneratePythonAuthGCPIDToken(t *testing.T) {
 		},
 	}
 
-	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic", Auth: "gcp-id-token"})
-	if err != nil {
-		t.Fatalf("GeneratePython: %v", err)
-	}
+	output := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic", Auth: "gcp-id-token"})["client.py"]
 
 	if !strings.Contains(output, "import time") {
 		t.Error("output should import time for gcp-id-token mode")
@@ -291,15 +285,54 @@ func TestGeneratePythonAuthDefaultIsNone(t *testing.T) {
 		},
 	}
 
-	// Empty Auth should default to "none"
-	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic"})
-	if err != nil {
-		t.Fatalf("GeneratePython: %v", err)
-	}
+	output := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic"})["client.py"]
 
 	if strings.Contains(output, "self._auth") || strings.Contains(output, "bearer_token") ||
 		strings.Contains(output, "api_key") || strings.Contains(output, "_get_auth_headers") {
 		t.Error("default (empty) auth should produce no auth code")
+	}
+}
+
+func TestResolveAuth(t *testing.T) {
+	tests := []struct {
+		name     string
+		explicit string
+		auth     *ir.Auth
+		want     string
+	}{
+		{"explicit wins over spec", "custom", &ir.Auth{Type: ir.AuthBearer}, "custom"},
+		{"explicit none wins over spec", "none", &ir.Auth{Type: ir.AuthBearer}, "none"},
+		{"auto-detect bearer", "", &ir.Auth{Type: ir.AuthBearer, Name: "Authorization"}, "bearer-token"},
+		{"auto-detect api-key", "", &ir.Auth{Type: ir.AuthAPIKey, Name: "X-API-Key", In: "header"}, "api-key"},
+		{"no spec auth defaults to none", "", nil, "none"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := &ir.Spec{Auth: tt.auth}
+			got := resolveAuth(tt.explicit, spec)
+			if got != tt.want {
+				t.Errorf("resolveAuth(%q, %+v) = %q, want %q", tt.explicit, tt.auth, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGeneratePythonAutoDetectBearer(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Auto Bearer API",
+		Auth:  &ir.Auth{Type: ir.AuthBearer, Name: "Authorization", In: "header"},
+		Endpoints: []ir.Endpoint{
+			{OperationID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+
+	output := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic"})["client.py"]
+
+	if !strings.Contains(output, "bearer_token: str") {
+		t.Error("auto-detected bearer auth should produce bearer_token parameter")
+	}
+	if !strings.Contains(output, `"Authorization"`) {
+		t.Error("auto-detected bearer auth should set Authorization header")
 	}
 }
 
@@ -319,10 +352,7 @@ func TestGeneratePythonArrayResponse(t *testing.T) {
 		},
 	}
 
-	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic"})
-	if err != nil {
-		t.Fatalf("GeneratePython: %v", err)
-	}
+	output := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic"})["client.py"]
 
 	if !strings.Contains(output, "[Pet.model_validate(item) for item in resp.json()]") {
 		t.Error("array of refs should deserialize with model_validate")
@@ -342,10 +372,7 @@ func TestGeneratePythonArrayOfPrimitivesResponse(t *testing.T) {
 		},
 	}
 
-	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic"})
-	if err != nil {
-		t.Fatalf("GeneratePython: %v", err)
-	}
+	output := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic"})["client.py"]
 
 	if !strings.Contains(output, "return resp.json()") {
 		t.Error("array of primitives should return resp.json() directly")
@@ -371,12 +398,8 @@ func TestGeneratePythonRequiredQueryParams(t *testing.T) {
 		},
 	}
 
-	output, err := GeneratePython(spec, PythonOptions{Style: "pydantic"})
-	if err != nil {
-		t.Fatalf("GeneratePython: %v", err)
-	}
+	output := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic"})["client.py"]
 
-	// Required param should come before optional
 	qIdx := strings.Index(output, "q: str,")
 	limitIdx := strings.Index(output, "limit: Optional[int]")
 	if qIdx == -1 {
@@ -389,8 +412,123 @@ func TestGeneratePythonRequiredQueryParams(t *testing.T) {
 		t.Error("required query param should come before optional")
 	}
 
-	// Required param should not have None check
 	if strings.Contains(output, "if q is not None") {
 		t.Error("required param should not have 'is not None' check")
 	}
+}
+
+// --- Tag-based splitting tests ---
+
+func TestGeneratePythonTagSplit(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Tagged API",
+		Models: []ir.Model{
+			{Name: "Pet", Fields: []ir.Field{{Name: "name", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true}}},
+			{Name: "User", Fields: []ir.Field{{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}}},
+		},
+		Endpoints: []ir.Endpoint{
+			{OperationID: "listPets", Method: "GET", Path: "/pets", Tags: []string{"Pets"},
+				ResponseType: &ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypeRef, Ref: "Pet"}}},
+			{OperationID: "createPet", Method: "POST", Path: "/pets", Tags: []string{"Pets"},
+				RequestBody: &ir.Type{Kind: ir.TypeRef, Ref: "Pet"}},
+			{OperationID: "getUser", Method: "GET", Path: "/users/{userId}", Tags: []string{"Users"},
+				Params:       []ir.Param{{Name: "userId", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}},
+				ResponseType: &ir.Type{Kind: ir.TypeRef, Ref: "User"}},
+		},
+	}
+
+	files := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic"})
+
+	expectedFiles := []string{"__init__.py", "_base.py", "_models.py", "client.py", "pets.py", "users.py"}
+	for _, f := range expectedFiles {
+		if _, ok := files[f]; !ok {
+			t.Errorf("missing expected file %q, got files: %v", f, fileNames(files))
+		}
+	}
+
+	if _, ok := files["client.py"]; ok {
+		if !strings.Contains(files["client.py"], "class Client(BaseClient):") {
+			t.Error("client.py should contain Client(BaseClient)")
+		}
+		if !strings.Contains(files["client.py"], "self.pets = PetsClient(self)") {
+			t.Error("client.py should compose PetsClient")
+		}
+		if !strings.Contains(files["client.py"], "self.users = UsersClient(self)") {
+			t.Error("client.py should compose UsersClient")
+		}
+	}
+
+	if pets, ok := files["pets.py"]; ok {
+		if !strings.Contains(pets, "class PetsClient:") {
+			t.Error("pets.py should contain PetsClient class")
+		}
+		if !strings.Contains(pets, "def list_pets(") {
+			t.Error("pets.py should contain list_pets method")
+		}
+		if !strings.Contains(pets, "def create_pet(") {
+			t.Error("pets.py should contain create_pet method")
+		}
+	}
+
+	if users, ok := files["users.py"]; ok {
+		if !strings.Contains(users, "class UsersClient:") {
+			t.Error("users.py should contain UsersClient class")
+		}
+		if !strings.Contains(users, "def get_user(") {
+			t.Error("users.py should contain get_user method")
+		}
+	}
+
+	if base, ok := files["_base.py"]; ok {
+		if !strings.Contains(base, "class APIError") {
+			t.Error("_base.py should contain APIError")
+		}
+		if !strings.Contains(base, "class BaseClient:") {
+			t.Error("_base.py should contain BaseClient")
+		}
+	}
+
+	if models, ok := files["_models.py"]; ok {
+		if !strings.Contains(models, "class Pet(BaseModel):") {
+			t.Error("_models.py should contain Pet model")
+		}
+		if !strings.Contains(models, "class User(BaseModel):") {
+			t.Error("_models.py should contain User model")
+		}
+	}
+
+	if init, ok := files["__init__.py"]; ok {
+		if !strings.Contains(init, "from .client import Client") {
+			t.Error("__init__.py should re-export Client")
+		}
+		if !strings.Contains(init, "from ._base import APIError") {
+			t.Error("__init__.py should re-export APIError")
+		}
+	}
+}
+
+func TestGeneratePythonNoTagsSingleFile(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Simple API",
+		Endpoints: []ir.Endpoint{
+			{OperationID: "ping", Method: "GET", Path: "/ping"},
+		},
+	}
+
+	files := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic"})
+
+	if len(files) != 1 {
+		t.Errorf("expected 1 file for no-tag spec, got %d: %v", len(files), fileNames(files))
+	}
+	if _, ok := files["client.py"]; !ok {
+		t.Error("no-tag spec should produce client.py")
+	}
+}
+
+func fileNames(files map[string]string) []string {
+	names := make([]string, 0, len(files))
+	for k := range files {
+		names = append(names, k)
+	}
+	return names
 }
