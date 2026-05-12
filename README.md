@@ -89,9 +89,20 @@ err := client.DeletePet(ctx, 1).Do()
 | Go | `client.go` | structs with JSON tags | net/http | Available |
 | TypeScript | `client.ts` | interfaces | fetch | Planned |
 
+## Size Comparison
+
+Generating a Python client from two large public OpenAPI specs, compared with [openapi-generator](https://github.com/OpenAPITools/openapi-generator):
+
+| Spec | openapi-generator | oapi-liteclient | Reduction |
+|------|-------------------|-----------------|-----------|
+| **GitHub REST API** (12.5 MB, 1183 endpoints) | 4,114 files / 31 MB / 34.6s | 50 files / 1.0 MB / 1.9s | 98% fewer files, 97% smaller, 18x faster |
+| **Kubernetes API** (3.9 MB, 1111 endpoints) | 1,652 files / 47 MB / 20.1s | 68 files / 1.4 MB / 0.8s | 96% fewer files, 97% smaller, 25x faster |
+
+For large specs with tags, endpoints are grouped by tag prefix into one file per logical area (e.g. all `Invoice`, `Invoice Line Item`, and `Invoice Tax Line Item` endpoints go into `invoice.py`). Specs without tags produce a single file.
+
 ## What Gets Generated
 
-For a typical 3-5 endpoint API, the output is a single file (~100-200 lines) containing:
+For a typical 3-5 endpoint API, the output is a single file (~100-200 lines). For larger specs with tagged endpoints, the output splits into one file per tag group:
 
 - **Models** — Pydantic `BaseModel` classes (Python) or structs with JSON tags (Go)
 - **Client** — one method per endpoint with typed parameters and return values. Go uses a request builder pattern with chained setters and `Do()`
