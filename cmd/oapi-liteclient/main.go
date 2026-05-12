@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 
 	"github.com/brendanmartin/oapi-liteclient/internal/generator"
@@ -17,7 +18,13 @@ func main() {
 	style := flag.String("style", "pydantic", "Model style for Python: pydantic (default) or dataclass")
 	auth := flag.String("auth", "", "Auth strategy: none, custom, bearer-token, gcp-id-token, api-key (auto-detected from spec if omitted)")
 	out := flag.String("out", "./client", "Output directory")
+	version := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if *version {
+		printVersion()
+		return
+	}
 
 	if *spec == "" {
 		fmt.Fprintln(os.Stderr, "error: --spec is required")
@@ -74,4 +81,35 @@ func main() {
 		}
 		fmt.Printf("Generated %s\n", outPath)
 	}
+}
+
+func printVersion() {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		fmt.Println("oapi-liteclient (unknown version)")
+		return
+	}
+	version := info.Main.Version
+	var revision, dirty string
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			revision = s.Value
+		case "vcs.modified":
+			if s.Value == "true" {
+				dirty = " (dirty)"
+			}
+		}
+	}
+	if revision != "" && len(revision) > 7 {
+		revision = revision[:7]
+	}
+	if revision != "" {
+		if version == "(devel)" || strings.Contains(version, "-0.") {
+			version = revision
+		} else {
+			version = version + " " + revision
+		}
+	}
+	fmt.Printf("oapi-liteclient %s%s\n", version, dirty)
 }
