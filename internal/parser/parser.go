@@ -332,9 +332,23 @@ func sanitizeName(name string) string {
 		name = name[i+1:]
 	}
 	var b strings.Builder
+	upper := true
 	for _, r := range name {
-		if r == '_' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
+		if r == '_' || r == '-' || r == ' ' || r == '/' || r == '$' || r == '+' {
+			upper = true
+			continue
+		}
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			if upper {
+				if r >= 'a' && r <= 'z' {
+					b.WriteRune(r - 32)
+				} else {
+					b.WriteRune(r)
+				}
+				upper = false
+			} else {
+				b.WriteRune(r)
+			}
 		}
 	}
 	return b.String()

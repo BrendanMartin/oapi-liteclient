@@ -18,11 +18,19 @@ type GoOptions struct {
 }
 
 // goName converts camelCase or snake_case to PascalCase.
+var goSpecialFieldNames = map[string]string{
+	"+1": "PlusOne",
+	"-1": "MinusOne",
+}
+
 func goName(name string) string {
+	if mapped, ok := goSpecialFieldNames[name]; ok {
+		return mapped
+	}
 	var result []rune
 	upper := true
 	for i, r := range name {
-		if r == '_' || r == '.' || r == '-' || r == ' ' {
+		if r == '_' || r == '.' || r == '-' || r == ' ' || r == '/' || r == '$' || r == '+' {
 			upper = true
 			continue
 		}
@@ -35,7 +43,11 @@ func goName(name string) string {
 			result = append(result, r)
 		}
 	}
-	return string(result)
+	s := string(result)
+	if len(s) > 0 && s[0] >= '0' && s[0] <= '9' {
+		s = "N" + s
+	}
+	return s
 }
 
 var goReserved = map[string]bool{
@@ -586,7 +598,11 @@ func goParamName(name string) string {
 		return strings.ToLower(string(runes))
 	}
 	runes[0] = unicode.ToLower(runes[0])
-	return string(runes)
+	s := string(runes)
+	if goReserved[s] {
+		return s + "_"
+	}
+	return s
 }
 
 // --- Split-mode Go templates ---

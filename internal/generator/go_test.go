@@ -35,6 +35,11 @@ func TestGoName(t *testing.T) {
 		{"sort.field", "SortField"},
 		{"sort.dir", "SortDir"},
 		{"filter-name", "FilterName"},
+		{"security-advisories/list-global-advisories", "SecurityAdvisoriesListGlobalAdvisories"},
+		{"$ref", "Ref"},
+		{"$schema", "Schema"},
+		{"+1", "PlusOne"},
+		{"-1", "MinusOne"},
 	}
 	for _, tt := range tests {
 		got := goName(tt.in)

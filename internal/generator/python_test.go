@@ -31,6 +31,11 @@ func TestPyName(t *testing.T) {
 		{"sort.field", "sort_field"},   // dotted param name
 		{"sort.dir", "sort_dir"},       // dotted param name
 		{"filter-name", "filter_name"}, // hyphenated param name
+		{"security-advisories/list-global-advisories", "security_advisories_list_global_advisories"}, // slashed operationId
+		{"$ref", "ref"}, // dollar-prefixed field
+		{"$schema", "schema"},
+		{"+1", "plus_one"}, // special emoji reaction field
+		{"-1", "minus_one"},
 	}
 	for _, tt := range tests {
 		got := pyName(tt.in)

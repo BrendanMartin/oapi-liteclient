@@ -234,7 +234,15 @@ var pythonReserved = map[string]bool{
 
 // pyName converts a field name to a valid Python snake_case identifier,
 // appending _ for reserved words.
+var pySpecialFieldNames = map[string]string{
+	"+1": "plus_one",
+	"-1": "minus_one",
+}
+
 func pyName(name string) string {
+	if mapped, ok := pySpecialFieldNames[name]; ok {
+		return mapped
+	}
 	var result []rune
 	for i, r := range name {
 		if unicode.IsUpper(r) {
@@ -245,13 +253,16 @@ func pyName(name string) string {
 				}
 			}
 			result = append(result, unicode.ToLower(r))
-		} else if r == '.' || r == '-' || r == ' ' {
+		} else if r == '.' || r == '-' || r == ' ' || r == '/' || r == '$' || r == '+' {
 			result = append(result, '_')
 		} else {
 			result = append(result, r)
 		}
 	}
-	s := string(result)
+	s := strings.TrimLeft(string(result), "_")
+	if len(s) > 0 && s[0] >= '0' && s[0] <= '9' {
+		s = "n" + s
+	}
 	if pythonReserved[s] {
 		s += "_"
 	}

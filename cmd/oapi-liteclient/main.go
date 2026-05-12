@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/brendanmartin/oapi-liteclient/internal/generator"
+	"github.com/brendanmartin/oapi-liteclient/internal/ir"
 	"github.com/brendanmartin/oapi-liteclient/internal/parser"
 )
 
@@ -91,6 +92,66 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Printf("Generated %s\n", outPath)
+	}
+
+	fmt.Println()
+	authMode := resolveAuthMode(*auth, irSpec)
+	switch *lang {
+	case "python":
+		module := filepath.Base(*out)
+		fmt.Printf("Usage:\n")
+		fmt.Printf("  from %s import Client\n", module)
+		fmt.Printf("  client = Client(%q%s)\n", irSpec.BaseURL, pyAuthArgs(authMode))
+	case "go":
+		pkg := filepath.Base(*out)
+		pkg = strings.ReplaceAll(pkg, "-", "_")
+		fmt.Printf("Usage:\n")
+		fmt.Printf("  client := %s.NewClient(%q, nil%s)\n", pkg, irSpec.BaseURL, goAuthArgs(authMode))
+	}
+}
+
+func resolveAuthMode(explicit string, spec *ir.Spec) string {
+	if explicit != "" {
+		return explicit
+	}
+	if spec.Auth != nil {
+		switch spec.Auth.Type {
+		case ir.AuthBearer:
+			return "bearer-token"
+		case ir.AuthAPIKey:
+			return "api-key"
+		}
+	}
+	return "none"
+}
+
+func pyAuthArgs(authMode string) string {
+	switch authMode {
+	case "bearer-token":
+		return `, bearer_token="..."`
+	case "api-key":
+		return `, api_key="..."`
+	case "custom":
+		return `, auth=lambda: {"Authorization": "..."}`
+	case "gcp-id-token":
+		return ""
+	default:
+		return ""
+	}
+}
+
+func goAuthArgs(authMode string) string {
+	switch authMode {
+	case "bearer-token":
+		return `, "your-token"`
+	case "api-key":
+		return `, "your-api-key"`
+	case "custom":
+		return `, func(r *http.Request) { r.Header.Set("Authorization", "...") }`
+	case "gcp-id-token":
+		return `, "https://your-audience"`
+	default:
+		return ""
 	}
 }
 
