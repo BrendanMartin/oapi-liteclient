@@ -619,9 +619,9 @@ class Client:
             f"{{fmtPath .Path}}",
 {{- if hasBody .RequestBody}}
 {{- if isArrayBody .RequestBody}}
-            json=[item.model_dump(exclude_none=True) for item in req],
+            json=[item.model_dump(exclude_none=True, by_alias=True) for item in req],
 {{- else}}
-            json=req.model_dump(exclude_none=True),
+            json=req.model_dump(exclude_none=True, by_alias=True),
 {{- end}}
 {{- end}}
 {{- if queryParams .Params}}
@@ -1060,9 +1060,9 @@ class {{.ClassName}}:
             f"{{fmtPath .Path}}",
 {{- if hasBody .RequestBody}}
 {{- if isArrayBody .RequestBody}}
-            json=[item.model_dump(exclude_none=True) for item in req],
+            json=[item.model_dump(exclude_none=True, by_alias=True) for item in req],
 {{- else}}
-            json=req.model_dump(exclude_none=True),
+            json=req.model_dump(exclude_none=True, by_alias=True),
 {{- end}}
 {{- end}}
 {{- if queryParams .Params}}
