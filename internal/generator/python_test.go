@@ -444,7 +444,7 @@ func TestGeneratePythonTagSplit(t *testing.T) {
 
 	files := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic"})
 
-	expectedFiles := []string{"__init__.py", "_base.py", "_models.py", "client.py", "pets.py", "users.py"}
+	expectedFiles := []string{"__init__.py", "_base.py", "models.py", "client.py", "pets.py", "users.py"}
 	for _, f := range expectedFiles {
 		if _, ok := files[f]; !ok {
 			t.Errorf("missing expected file %q, got files: %v", f, fileNames(files))
@@ -493,12 +493,12 @@ func TestGeneratePythonTagSplit(t *testing.T) {
 		}
 	}
 
-	if models, ok := files["_models.py"]; ok {
+	if models, ok := files["models.py"]; ok {
 		if !strings.Contains(models, "class Pet(BaseModel):") {
-			t.Error("_models.py should contain Pet model")
+			t.Error("models.py should contain Pet model")
 		}
 		if !strings.Contains(models, "class User(BaseModel):") {
-			t.Error("_models.py should contain User model")
+			t.Error("models.py should contain User model")
 		}
 	}
 
@@ -604,8 +604,11 @@ func TestPyProjectTOML(t *testing.T) {
 	if !strings.Contains(toml, `"httpx>=0.27"`) {
 		t.Error("should include httpx dependency")
 	}
-	if !strings.Contains(toml, `packages = ["my_client"]`) {
-		t.Error("should include setuptools packages config")
+	if !strings.Contains(toml, `packages = ["."]`) {
+		t.Error("should include hatch packages config")
+	}
+	if !strings.Contains(toml, `build-backend = "hatchling.build"`) {
+		t.Error("should use hatchling build backend")
 	}
 
 	dcFiles := mustGeneratePython(t, spec, PythonOptions{Style: "dataclass", Package: "my-client"})

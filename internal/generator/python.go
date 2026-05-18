@@ -133,7 +133,7 @@ func GeneratePython(spec *ir.Spec, opts PythonOptions) (map[string]string, error
 	}
 	files["_base.py"] = buf.String()
 
-	// _models.py
+	// models.py
 	buf.Reset()
 	modelsTmpl := pyModelsTmpl
 	if !isPydantic {
@@ -142,7 +142,7 @@ func GeneratePython(spec *ir.Spec, opts PythonOptions) (map[string]string, error
 	if err := modelsTmpl.Execute(&buf, spec); err != nil {
 		return nil, fmt.Errorf("executing models template: %w", err)
 	}
-	files["_models.py"] = buf.String()
+	files["models.py"] = buf.String()
 
 	// Per-tag files
 	type tagFileData struct {
@@ -420,9 +420,13 @@ dependencies = [
 %s,
 ]
 
-[tool.setuptools]
-packages = [%q]
-`, safePkg, strings.Join(deps, ",\n"), safePkg)
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+`, safePkg, strings.Join(deps, ",\n"))
 }
 
 const pydanticTemplate = `"""Auto-generated API client for {{.Title}}."""
@@ -1010,7 +1014,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ._base import BaseClient
-from ._models import *
+from .models import *
 
 
 class {{.ClassName}}:
@@ -1259,7 +1263,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ._base import BaseClient
-from ._models import *
+from .models import *
 
 
 class {{.ClassName}}:

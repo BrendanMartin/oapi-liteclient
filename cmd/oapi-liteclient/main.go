@@ -85,25 +85,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Python files nest under a package subdirectory when pyproject.toml is present.
-	pkgSubdir := ""
-	if *lang == "python" {
-		if _, ok := files["pyproject.toml"]; ok {
-			pkgSubdir = filepath.Base(*out)
-			pkgSubdir = strings.ReplaceAll(pkgSubdir, "-", "_")
-			if err := os.MkdirAll(filepath.Join(*out, pkgSubdir), 0o755); err != nil {
-				fmt.Fprintf(os.Stderr, "error creating package dir: %v\n", err)
-				os.Exit(1)
-			}
-		}
-	}
-
 	for filename, content := range files {
-		dir := *out
-		if pkgSubdir != "" && filename != "pyproject.toml" {
-			dir = filepath.Join(*out, pkgSubdir)
-		}
-		outPath := filepath.Join(dir, filename)
+		outPath := filepath.Join(*out, filename)
 		if err := os.WriteFile(outPath, []byte(content), 0o644); err != nil {
 			fmt.Fprintf(os.Stderr, "error writing %s: %v\n", outPath, err)
 			os.Exit(1)

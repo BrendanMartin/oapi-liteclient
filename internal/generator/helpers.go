@@ -12,10 +12,9 @@ import (
 var reservedFilenames = map[string]bool{
 	"client":   true,
 	"_base":    true,
-	"_models":  true,
+	"models":   true,
 	"__init__": true,
 	"errors":   true,
-	"models":   true,
 }
 
 // groupEndpointsByTag groups endpoints by their first tag.
