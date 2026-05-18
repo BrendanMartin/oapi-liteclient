@@ -29,8 +29,9 @@ func resolveAuth(explicit string, spec *ir.Spec) string {
 
 // PythonOptions configures the Python code generator.
 type PythonOptions struct {
-	Style string // "pydantic" (default) or "dataclass"
-	Auth  string // "none", "custom", "bearer-token", "gcp-id-token", "api-key"
+	Style   string // "pydantic" (default) or "dataclass"
+	Auth    string // "none", "custom", "bearer-token", "gcp-id-token", "api-key"
+	Package string // package name for pyproject.toml (defaults to output dir name)
 }
 
 // pythonData is passed to the template.
@@ -104,7 +105,11 @@ func GeneratePython(spec *ir.Spec, opts PythonOptions) (map[string]string, error
 		if err := tmpl.Execute(&buf, data); err != nil {
 			return nil, fmt.Errorf("executing template: %w", err)
 		}
-		return map[string]string{"client.py": buf.String()}, nil
+		files := map[string]string{"client.py": buf.String()}
+		if opts.Package != "" {
+			files["pyproject.toml"] = pyProjectTOML(opts.Package, opts.Style, authMode)
+		}
+		return files, nil
 	}
 
 	groups = mergeTagsByPrefix(groups)
@@ -188,6 +193,10 @@ func GeneratePython(spec *ir.Spec, opts PythonOptions) (map[string]string, error
 		return nil, fmt.Errorf("executing init template: %w", err)
 	}
 	files["__init__.py"] = buf.String()
+
+	if opts.Package != "" {
+		files["pyproject.toml"] = pyProjectTOML(opts.Package, opts.Style, authMode)
+	}
 
 	return files, nil
 }
@@ -391,6 +400,29 @@ func fmtPath(path string) string {
 		}
 	}
 	return string(result)
+}
+
+func pyProjectTOML(pkg, style, authMode string) string {
+	safePkg := strings.ReplaceAll(pkg, "-", "_")
+	var deps []string
+	deps = append(deps, `    "httpx>=0.27"`)
+	if style != "dataclass" {
+		deps = append(deps, `    "pydantic>=2"`)
+	}
+	if authMode == "gcp-id-token" {
+		deps = append(deps, `    "google-auth>=2"`)
+	}
+	return fmt.Sprintf(`[project]
+name = %q
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+%s,
+]
+
+[tool.setuptools]
+packages = [%q]
+`, safePkg, strings.Join(deps, ",\n"), safePkg)
 }
 
 const pydanticTemplate = `"""Auto-generated API client for {{.Title}}."""

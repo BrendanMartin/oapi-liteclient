@@ -44,7 +44,7 @@ func main() {
 
 	switch *lang {
 	case "python":
-		opts := generator.PythonOptions{Style: *style, Auth: *auth}
+		opts := generator.PythonOptions{Style: *style, Auth: *auth, Package: filepath.Base(*out)}
 		files, err = generator.GeneratePython(irSpec, opts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -85,8 +85,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Python files nest under a package subdirectory when pyproject.toml is present.
+	pkgSubdir := ""
+	if *lang == "python" {
+		if _, ok := files["pyproject.toml"]; ok {
+			pkgSubdir = filepath.Base(*out)
+			pkgSubdir = strings.ReplaceAll(pkgSubdir, "-", "_")
+			if err := os.MkdirAll(filepath.Join(*out, pkgSubdir), 0o755); err != nil {
+				fmt.Fprintf(os.Stderr, "error creating package dir: %v\n", err)
+				os.Exit(1)
+			}
+		}
+	}
+
 	for filename, content := range files {
-		outPath := filepath.Join(*out, filename)
+		dir := *out
+		if pkgSubdir != "" && filename != "pyproject.toml" {
+			dir = filepath.Join(*out, pkgSubdir)
+		}
+		outPath := filepath.Join(dir, filename)
 		if err := os.WriteFile(outPath, []byte(content), 0o644); err != nil {
 			fmt.Fprintf(os.Stderr, "error writing %s: %v\n", outPath, err)
 			os.Exit(1)
@@ -98,7 +115,9 @@ func main() {
 	authMode := resolveAuthMode(*auth, irSpec)
 	switch *lang {
 	case "python":
-		module := filepath.Base(*out)
+		module := strings.ReplaceAll(filepath.Base(*out), "-", "_")
+		fmt.Printf("Install:\n")
+		fmt.Printf("  pip install %s\n\n", *out)
 		fmt.Printf("Usage:\n")
 		fmt.Printf("  from %s import Client\n", module)
 		fmt.Printf("  client = Client(%q%s)\n", irSpec.BaseURL, pyAuthArgs(authMode))

@@ -584,6 +584,42 @@ func TestGeneratePythonNoTagsSingleFile(t *testing.T) {
 	}
 }
 
+func TestPyProjectTOML(t *testing.T) {
+	spec := &ir.Spec{
+		Title:     "Test API",
+		Endpoints: []ir.Endpoint{{OperationID: "ping", Method: "GET", Path: "/ping"}},
+	}
+
+	files := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic", Package: "my-client"})
+	toml, ok := files["pyproject.toml"]
+	if !ok {
+		t.Fatal("expected pyproject.toml in output")
+	}
+	if !strings.Contains(toml, `name = "my_client"`) {
+		t.Error("pyproject.toml should sanitize hyphens to underscores in name")
+	}
+	if !strings.Contains(toml, `"pydantic>=2"`) {
+		t.Error("pydantic style should include pydantic dependency")
+	}
+	if !strings.Contains(toml, `"httpx>=0.27"`) {
+		t.Error("should include httpx dependency")
+	}
+	if !strings.Contains(toml, `packages = ["my_client"]`) {
+		t.Error("should include setuptools packages config")
+	}
+
+	dcFiles := mustGeneratePython(t, spec, PythonOptions{Style: "dataclass", Package: "my-client"})
+	dcToml := dcFiles["pyproject.toml"]
+	if strings.Contains(dcToml, "pydantic") {
+		t.Error("dataclass style should not include pydantic dependency")
+	}
+
+	noPackage := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic"})
+	if _, ok := noPackage["pyproject.toml"]; ok {
+		t.Error("should not generate pyproject.toml when Package is empty")
+	}
+}
+
 func fileNames(files map[string]string) []string {
 	names := make([]string, 0, len(files))
 	for k := range files {

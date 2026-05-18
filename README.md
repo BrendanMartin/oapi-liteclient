@@ -39,8 +39,14 @@ oapi-liteclient --spec petstore.yaml --lang go --auth api-key --out ./petstore/
 
 ### Python
 
+The generated output includes a `pyproject.toml`, so you can install it directly:
+
+```bash
+pip install ./petstore
+```
+
 ```python
-from petstore.client import Client, Pet, PetCreate
+from petstore import Client, Pet, PetCreate
 
 with Client("https://petstore.example.com/v1", bearer_token="sk-...") as c:
     pets = c.list_pets(limit=10)
@@ -87,7 +93,7 @@ err := client.DeletePet(ctx, 1).Do()
 
 | Language | Output | Models | HTTP Library | Status |
 |----------|--------|--------|-------------|--------|
-| Python | `client.py` | Pydantic or dataclass | httpx | Available |
+| Python | `client.py` + `pyproject.toml` | Pydantic or dataclass | httpx | Available |
 | Go | `client.go` | structs with JSON tags | net/http | Available |
 | TypeScript | `client.ts` | interfaces | fetch | Planned |
 
