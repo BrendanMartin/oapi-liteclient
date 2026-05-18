@@ -426,7 +426,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
-`, safePkg, strings.Join(deps, ",\n"))
+
+[tool.hatch.build.targets.wheel.sources]
+"." = %q
+`, safePkg, strings.Join(deps, ",\n"), safePkg)
 }
 
 const pydanticTemplate = `"""Auto-generated API client for {{.Title}}."""
