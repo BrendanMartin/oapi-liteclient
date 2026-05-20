@@ -34,10 +34,16 @@ func buildIRFromV2(model *libopenapi.DocumentModel[v2.Swagger]) *ir.Spec {
 		}
 	}
 
+	seenOps := make(map[string]bool)
 	if model.Model.Paths != nil && model.Model.Paths.PathItems != nil {
 		for path, pathItem := range model.Model.Paths.PathItems.FromOldest() {
-			endpoints := buildEndpointsV2(path, pathItem)
-			spec.Endpoints = append(spec.Endpoints, endpoints...)
+			for _, ep := range buildEndpointsV2(path, pathItem) {
+				if seenOps[ep.OperationID] {
+					continue
+				}
+				seenOps[ep.OperationID] = true
+				spec.Endpoints = append(spec.Endpoints, ep)
+			}
 		}
 	}
 

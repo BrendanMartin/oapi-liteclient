@@ -81,11 +81,17 @@ func buildIR(model *libopenapi.DocumentModel[v3.Document]) *ir.Spec {
 		}
 	}
 
-	// Endpoints from paths
+	// Endpoints from paths (deduplicate by operationId)
+	seenOps := make(map[string]bool)
 	if model.Model.Paths != nil && model.Model.Paths.PathItems != nil {
 		for path, pathItem := range model.Model.Paths.PathItems.FromOldest() {
-			endpoints := buildEndpoints(path, pathItem)
-			spec.Endpoints = append(spec.Endpoints, endpoints...)
+			for _, ep := range buildEndpoints(path, pathItem) {
+				if seenOps[ep.OperationID] {
+					continue
+				}
+				seenOps[ep.OperationID] = true
+				spec.Endpoints = append(spec.Endpoints, ep)
+			}
 		}
 	}
 
