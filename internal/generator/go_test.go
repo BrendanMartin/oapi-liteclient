@@ -217,10 +217,11 @@ func TestGenerateGoClientNoAuth(t *testing.T) {
 
 	checks := []string{
 		"type Client struct {",
-		"baseURL    string",
-		"httpClient *http.Client",
-		"func NewClient(baseURL string, httpClient *http.Client) *Client {",
+		"BaseURL    string",
+		"HTTPClient *http.Client",
+		"func NewClient() *Client {",
 		"http.DefaultClient",
+		"DefaultBaseURL",
 	}
 	for _, check := range checks {
 		if !strings.Contains(output, check) {
@@ -468,7 +469,7 @@ func TestGenerateGoAuthBearerToken(t *testing.T) {
 
 	checks := []string{
 		"bearerToken string",
-		"func NewClient(baseURL string, httpClient *http.Client, bearerToken string) *Client {",
+		"func NewClient(bearerToken string) *Client {",
 		`req.Header.Set("Authorization", "Bearer "+c.bearerToken)`,
 	}
 	for _, check := range checks {
@@ -497,7 +498,7 @@ func TestGenerateGoAuthAPIKey(t *testing.T) {
 	checks := []string{
 		"apiKey       string",
 		"apiKeyHeader string",
-		"func NewClient(baseURL string, httpClient *http.Client, apiKey string) *Client {",
+		"func NewClient(apiKey string) *Client {",
 		`apiKeyHeader: "X-API-Key"`,
 		"req.Header.Set(c.apiKeyHeader, c.apiKey)",
 	}
@@ -525,7 +526,7 @@ func TestGenerateGoAuthCustom(t *testing.T) {
 
 	checks := []string{
 		"authFunc func(req *http.Request)",
-		"func NewClient(baseURL string, httpClient *http.Client, authFunc func(req *http.Request)) *Client {",
+		"func NewClient(authFunc func(req *http.Request)) *Client {",
 		"c.authFunc(req)",
 	}
 	for _, check := range checks {
@@ -548,7 +549,7 @@ func TestGenerateGoAuthGCPIDToken(t *testing.T) {
 
 	checks := []string{
 		`"google.golang.org/api/idtoken"`,
-		"func NewClient(baseURL string, httpClient *http.Client, targetAudience string) (*Client, error) {",
+		"func NewClient(targetAudience string) (*Client, error) {",
 		"idtoken.NewTokenSource",
 		"c.tokenSource.Token()",
 	}

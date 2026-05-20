@@ -320,9 +320,12 @@ type {{.Name}} struct {
 }
 {{end}}
 {{- if .Endpoints}}
+
+const DefaultBaseURL = "{{.BaseURL}}"
+
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
+	BaseURL    string
+	HTTPClient *http.Client
 {{- if eq .AuthMode "bearer-token"}}
 	bearerToken string
 {{- end}}
@@ -340,51 +343,36 @@ type Client struct {
 
 {{- if eq .AuthMode "none"}}
 
-func NewClient(baseURL string, httpClient *http.Client) *Client {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-	return &Client{baseURL: strings.TrimRight(baseURL, "/"), httpClient: httpClient}
+func NewClient() *Client {
+	return &Client{BaseURL: DefaultBaseURL, HTTPClient: http.DefaultClient}
 }
 {{- end}}
 {{- if eq .AuthMode "bearer-token"}}
 
-func NewClient(baseURL string, httpClient *http.Client, bearerToken string) *Client {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-	return &Client{baseURL: strings.TrimRight(baseURL, "/"), httpClient: httpClient, bearerToken: bearerToken}
+func NewClient(bearerToken string) *Client {
+	return &Client{BaseURL: DefaultBaseURL, HTTPClient: http.DefaultClient, bearerToken: bearerToken}
 }
 {{- end}}
 {{- if eq .AuthMode "api-key"}}
 
-func NewClient(baseURL string, httpClient *http.Client, apiKey string) *Client {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-	return &Client{baseURL: strings.TrimRight(baseURL, "/"), httpClient: httpClient, apiKey: apiKey, apiKeyHeader: "{{.Auth.Name}}"}
+func NewClient(apiKey string) *Client {
+	return &Client{BaseURL: DefaultBaseURL, HTTPClient: http.DefaultClient, apiKey: apiKey, apiKeyHeader: "{{.Auth.Name}}"}
 }
 {{- end}}
 {{- if eq .AuthMode "custom"}}
 
-func NewClient(baseURL string, httpClient *http.Client, authFunc func(req *http.Request)) *Client {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-	return &Client{baseURL: strings.TrimRight(baseURL, "/"), httpClient: httpClient, authFunc: authFunc}
+func NewClient(authFunc func(req *http.Request)) *Client {
+	return &Client{BaseURL: DefaultBaseURL, HTTPClient: http.DefaultClient, authFunc: authFunc}
 }
 {{- end}}
 {{- if eq .AuthMode "gcp-id-token"}}
 
-func NewClient(baseURL string, httpClient *http.Client, targetAudience string) (*Client, error) {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
+func NewClient(targetAudience string) (*Client, error) {
 	ts, err := idtoken.NewTokenSource(context.Background(), targetAudience)
 	if err != nil {
 		return nil, fmt.Errorf("creating token source: %w", err)
 	}
-	return &Client{baseURL: strings.TrimRight(baseURL, "/"), httpClient: httpClient, tokenSource: ts}, nil
+	return &Client{BaseURL: DefaultBaseURL, HTTPClient: http.DefaultClient, tokenSource: ts}, nil
 }
 {{- end}}
 
@@ -397,7 +385,11 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}) 
 		}
 		reqBody = bytes.NewReader(b)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reqBody)
+	baseURL := c.BaseURL
+	if baseURL == "" {
+		baseURL = DefaultBaseURL
+	}
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(baseURL, "/")+path, reqBody)
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +414,11 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}) 
 	}
 	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 {{- end}}
-	resp, err := c.httpClient.Do(req)
+	httpClient := c.HTTPClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -655,9 +651,11 @@ import (
 {{- end}}
 )
 
+const DefaultBaseURL = "{{.BaseURL}}"
+
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
+	BaseURL    string
+	HTTPClient *http.Client
 {{- if eq .AuthMode "bearer-token"}}
 	bearerToken string
 {{- end}}
@@ -675,51 +673,36 @@ type Client struct {
 
 {{- if eq .AuthMode "none"}}
 
-func NewClient(baseURL string, httpClient *http.Client) *Client {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-	return &Client{baseURL: strings.TrimRight(baseURL, "/"), httpClient: httpClient}
+func NewClient() *Client {
+	return &Client{BaseURL: DefaultBaseURL, HTTPClient: http.DefaultClient}
 }
 {{- end}}
 {{- if eq .AuthMode "bearer-token"}}
 
-func NewClient(baseURL string, httpClient *http.Client, bearerToken string) *Client {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-	return &Client{baseURL: strings.TrimRight(baseURL, "/"), httpClient: httpClient, bearerToken: bearerToken}
+func NewClient(bearerToken string) *Client {
+	return &Client{BaseURL: DefaultBaseURL, HTTPClient: http.DefaultClient, bearerToken: bearerToken}
 }
 {{- end}}
 {{- if eq .AuthMode "api-key"}}
 
-func NewClient(baseURL string, httpClient *http.Client, apiKey string) *Client {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-	return &Client{baseURL: strings.TrimRight(baseURL, "/"), httpClient: httpClient, apiKey: apiKey, apiKeyHeader: "{{.Auth.Name}}"}
+func NewClient(apiKey string) *Client {
+	return &Client{BaseURL: DefaultBaseURL, HTTPClient: http.DefaultClient, apiKey: apiKey, apiKeyHeader: "{{.Auth.Name}}"}
 }
 {{- end}}
 {{- if eq .AuthMode "custom"}}
 
-func NewClient(baseURL string, httpClient *http.Client, authFunc func(req *http.Request)) *Client {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-	return &Client{baseURL: strings.TrimRight(baseURL, "/"), httpClient: httpClient, authFunc: authFunc}
+func NewClient(authFunc func(req *http.Request)) *Client {
+	return &Client{BaseURL: DefaultBaseURL, HTTPClient: http.DefaultClient, authFunc: authFunc}
 }
 {{- end}}
 {{- if eq .AuthMode "gcp-id-token"}}
 
-func NewClient(baseURL string, httpClient *http.Client, targetAudience string) (*Client, error) {
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
+func NewClient(targetAudience string) (*Client, error) {
 	ts, err := idtoken.NewTokenSource(context.Background(), targetAudience)
 	if err != nil {
 		return nil, fmt.Errorf("creating token source: %w", err)
 	}
-	return &Client{baseURL: strings.TrimRight(baseURL, "/"), httpClient: httpClient, tokenSource: ts}, nil
+	return &Client{BaseURL: DefaultBaseURL, HTTPClient: http.DefaultClient, tokenSource: ts}, nil
 }
 {{- end}}
 
@@ -732,7 +715,11 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}) 
 		}
 		reqBody = bytes.NewReader(b)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reqBody)
+	baseURL := c.BaseURL
+	if baseURL == "" {
+		baseURL = DefaultBaseURL
+	}
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(baseURL, "/")+path, reqBody)
 	if err != nil {
 		return nil, err
 	}
@@ -757,7 +744,11 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}) 
 	}
 	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
 {{- end}}
-	resp, err := c.httpClient.Do(req)
+	httpClient := c.HTTPClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

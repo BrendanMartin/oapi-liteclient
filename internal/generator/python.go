@@ -503,7 +503,7 @@ class Client:
 
     def __init__(
         self,
-        base_url: str,
+        base_url: str = "{{.BaseURL}}",
 {{- if eq .AuthMode "custom"}}
         auth: Callable[[], dict[str, str]] | None = None,
 {{- end}}
@@ -702,7 +702,7 @@ class Client:
 
     def __init__(
         self,
-        base_url: str,
+        base_url: str = "{{.BaseURL}}",
 {{- if eq .AuthMode "custom"}}
         auth: Callable[[], dict[str, str]] | None = None,
 {{- end}}
@@ -882,7 +882,7 @@ class BaseClient:
 
     def __init__(
         self,
-        base_url: str,
+        base_url: str = "{{.BaseURL}}",
 {{- if eq .AuthMode "custom"}}
         auth: Callable[[], dict[str, str]] | None = None,
 {{- end}}
@@ -1150,7 +1150,7 @@ class BaseClient:
 
     def __init__(
         self,
-        base_url: str,
+        base_url: str = "{{.BaseURL}}",
 {{- if eq .AuthMode "custom"}}
         auth: Callable[[], dict[str, str]] | None = None,
 {{- end}}

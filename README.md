@@ -59,7 +59,7 @@ with Client("https://petstore.example.com/v1", bearer_token="sk-...") as c:
 ```go
 import "myproject/petstore"
 
-client := petstore.NewClient("https://petstore.example.com/v1", nil, "my-api-key")
+client := petstore.NewClient("my-api-key")
 
 pets, err := client.ListPets(ctx).Limit(10).Do()
 pet, err := client.CreatePet(ctx, petstore.PetCreate{Name: "Buddy"}).Do()
