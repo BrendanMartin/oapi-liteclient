@@ -71,7 +71,7 @@ components:
         user_id:
           type: integer
         status:
-          type: string
+          $ref: "#/components/schemas/OrderStatus"
         total_amount:
           type: number
         items:
@@ -103,6 +103,13 @@ components:
           type: number
         in_stock:
           type: boolean
+    # Scalar enum — should not produce a model, fields referencing it should be str
+    OrderStatus:
+      type: string
+      enum:
+        - pending
+        - shipped
+        - delivered
     # Python reserved words as field names
     Metadata:
       type: object

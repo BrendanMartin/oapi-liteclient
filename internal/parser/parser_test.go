@@ -324,6 +324,20 @@ func TestParseComplex(t *testing.T) {
 		t.Error("listUsers.is_active should be required")
 	}
 
+	// Scalar enum schema should not produce a model
+	if findModel(spec.Models, "OrderStatus") != nil {
+		t.Error("OrderStatus should not be emitted as a model (it's a scalar enum)")
+	}
+
+	// Field referencing scalar enum should resolve to string, not TypeRef
+	statusField := findField(order.Fields, "status")
+	if statusField == nil {
+		t.Fatal("Order.status not found")
+	}
+	if statusField.Type.Kind != ir.TypePrimitive || statusField.Type.Prim != ir.PrimString {
+		t.Errorf("Order.status type = %+v, want PrimString (scalar enum ref)", statusField.Type)
+	}
+
 	// All-optional model
 	filters := findModel(spec.Models, "SearchFilters")
 	if filters == nil {

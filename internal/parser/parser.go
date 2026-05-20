@@ -76,6 +76,9 @@ func buildIR(model *libopenapi.DocumentModel[v3.Document]) *ir.Spec {
 			if schema == nil {
 				continue
 			}
+			if isScalarSchema(schema) {
+				continue
+			}
 			m := buildModel(sanitizeName(name), schema)
 			spec.Models = append(spec.Models, m)
 		}
@@ -161,6 +164,9 @@ func schemaToType(proxy *base.SchemaProxy) ir.Type {
 	// Check if this is a $ref to a named schema
 	ref := proxy.GetReference()
 	if ref != "" {
+		if isScalarSchema(schema) {
+			return scalarType(schema)
+		}
 		parts := strings.Split(ref, "/")
 		refName := sanitizeName(parts[len(parts)-1])
 		return ir.Type{Kind: ir.TypeRef, Ref: refName}
@@ -328,6 +334,36 @@ func isJSONMediaType(mt string) bool {
 	return mt == "application/json" ||
 		mt == "text/json" ||
 		strings.HasSuffix(mt, "+json")
+}
+
+func isScalarSchema(schema *base.Schema) bool {
+	if schema == nil {
+		return false
+	}
+	if schema.Properties != nil && schema.Properties.Len() > 0 {
+		return false
+	}
+	if len(schema.Type) == 0 {
+		return false
+	}
+	switch schema.Type[0] {
+	case "string", "integer", "number", "boolean":
+		return true
+	}
+	return false
+}
+
+func scalarType(schema *base.Schema) ir.Type {
+	switch schema.Type[0] {
+	case "integer":
+		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}
+	case "number":
+		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimFloat}
+	case "boolean":
+		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimBool}
+	default:
+		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}
+	}
 }
 
 // sanitizeName produces a valid identifier from a schema name by stripping

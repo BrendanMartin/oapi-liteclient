@@ -29,6 +29,9 @@ func buildIRFromV2(model *libopenapi.DocumentModel[v2.Swagger]) *ir.Spec {
 			if schema == nil {
 				continue
 			}
+			if isScalarSchema(schema) {
+				continue
+			}
 			m := buildModel(sanitizeName(name), schema)
 			spec.Models = append(spec.Models, m)
 		}
