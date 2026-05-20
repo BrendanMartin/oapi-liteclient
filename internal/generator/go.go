@@ -15,6 +15,7 @@ import (
 type GoOptions struct {
 	Auth    string // "none", "custom", "bearer-token", "api-key", "gcp-id-token"
 	Package string // Go package name for generated code
+	Lenient bool   // make all model fields pointer types (tolerates null from inaccurate specs)
 }
 
 // goName converts camelCase or snake_case to PascalCase.
@@ -186,6 +187,9 @@ func goFormat(src []byte) (string, error) {
 // GenerateGo generates a Go client from the IR spec.
 // Returns a map of filename → content. Single-file when no tags are present.
 func GenerateGo(spec *ir.Spec, opts GoOptions) (map[string]string, error) {
+	if opts.Lenient {
+		spec = makeLenient(spec)
+	}
 	authMode := resolveAuth(opts.Auth, spec)
 	pkg := opts.Package
 	if pkg == "" {

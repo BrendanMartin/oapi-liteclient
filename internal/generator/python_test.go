@@ -623,6 +623,42 @@ func TestPyProjectTOML(t *testing.T) {
 	}
 }
 
+func TestGeneratePythonLenient(t *testing.T) {
+	spec := &ir.Spec{
+		Title:   "Test API",
+		BaseURL: "https://api.example.com",
+		Models: []ir.Model{
+			{
+				Name: "Pet",
+				Fields: []ir.Field{
+					{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true},
+					{Name: "name", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true},
+					{Name: "tag", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: false},
+				},
+			},
+		},
+		Endpoints: []ir.Endpoint{{OperationID: "getPet", Method: "GET", Path: "/pets/{petId}"}},
+	}
+
+	strict := mustGeneratePython(t, spec, PythonOptions{})
+	code := strict["client.py"]
+	if !strings.Contains(code, "id: int") {
+		t.Error("strict mode: required field 'id' should not be Optional")
+	}
+
+	lenient := mustGeneratePython(t, spec, PythonOptions{Lenient: true})
+	code = lenient["client.py"]
+	if strings.Contains(code, "id: int\n") {
+		t.Error("lenient mode: required field 'id' should become Optional")
+	}
+	if !strings.Contains(code, "Optional[int]") {
+		t.Error("lenient mode: 'id' should be Optional[int]")
+	}
+	if !strings.Contains(code, "Optional[str]") {
+		t.Error("lenient mode: all fields should be Optional")
+	}
+}
+
 func fileNames(files map[string]string) []string {
 	names := make([]string, 0, len(files))
 	for k := range files {

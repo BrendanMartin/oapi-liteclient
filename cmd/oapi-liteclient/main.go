@@ -20,6 +20,7 @@ func main() {
 	auth := flag.String("auth", "", "Auth strategy: none, custom, bearer-token, gcp-id-token, api-key (auto-detected from spec if omitted)")
 	out := flag.String("out", "./client", "Output directory")
 	force := flag.Bool("force", false, "Overwrite output directory if it exists")
+	lenient := flag.Bool("lenient", false, "Make all model fields optional (tolerates null values from inaccurate specs)")
 	version := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 
@@ -44,7 +45,7 @@ func main() {
 
 	switch *lang {
 	case "python":
-		opts := generator.PythonOptions{Style: *style, Auth: *auth, Package: filepath.Base(*out)}
+		opts := generator.PythonOptions{Style: *style, Auth: *auth, Package: filepath.Base(*out), Lenient: *lenient}
 		files, err = generator.GeneratePython(irSpec, opts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -59,7 +60,7 @@ func main() {
 		if len(pkg) > 0 && pkg[0] >= '0' && pkg[0] <= '9' {
 			pkg = "pkg" + pkg
 		}
-		opts := generator.GoOptions{Auth: *auth, Package: pkg}
+		opts := generator.GoOptions{Auth: *auth, Package: pkg, Lenient: *lenient}
 		files, err = generator.GenerateGo(irSpec, opts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)

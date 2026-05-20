@@ -32,6 +32,7 @@ type PythonOptions struct {
 	Style   string // "pydantic" (default) or "dataclass"
 	Auth    string // "none", "custom", "bearer-token", "gcp-id-token", "api-key"
 	Package string // package name for pyproject.toml (defaults to output dir name)
+	Lenient bool   // make all model fields Optional (tolerates null from inaccurate specs)
 }
 
 // pythonData is passed to the template.
@@ -92,6 +93,9 @@ var pyTagDcTmpl = template.Must(template.New("pyTagDc").Funcs(funcMap).Parse(pyT
 // GeneratePython generates a Python client from the IR spec.
 // Returns a map of filename → content. Single-file when no tags are present.
 func GeneratePython(spec *ir.Spec, opts PythonOptions) (map[string]string, error) {
+	if opts.Lenient {
+		spec = makeLenient(spec)
+	}
 	authMode := resolveAuth(opts.Auth, spec)
 
 	groups, hasTags := groupEndpointsByTag(spec.Endpoints)
@@ -323,6 +327,21 @@ func docstring(ep ir.Endpoint) string {
 		return prefix + " — " + text
 	}
 	return prefix
+}
+
+func makeLenient(spec *ir.Spec) *ir.Spec {
+	out := *spec
+	out.Models = make([]ir.Model, len(spec.Models))
+	for i, m := range spec.Models {
+		model := m
+		model.Fields = make([]ir.Field, len(m.Fields))
+		for j, f := range m.Fields {
+			f.Required = false
+			model.Fields[j] = f
+		}
+		out.Models[i] = model
+	}
+	return &out
 }
 
 // sortedFields returns fields ordered for valid dataclass definitions:

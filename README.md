@@ -77,6 +77,7 @@ err := client.DeletePet(ctx, 1).Do()
 | `--auth` | `none` | Auth strategy (see below) |
 | `--out` | `./client` | Output directory |
 | `--force` | `false` | Overwrite output directory if it exists |
+| `--lenient` | `false` | Make all model fields optional (tolerates null values from inaccurate specs) |
 | `--version` | | Print version and exit |
 
 ## Auth Strategies
