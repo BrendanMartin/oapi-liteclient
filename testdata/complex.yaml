@@ -110,6 +110,23 @@ components:
         - pending
         - shipped
         - delivered
+    # Array-type schema — should not produce a model, refs should resolve to list
+    PatchOperation:
+      type: object
+      required:
+        - op
+        - path
+      properties:
+        op:
+          type: string
+        path:
+          type: string
+        value:
+          type: string
+    PatchDocument:
+      type: array
+      items:
+        $ref: "#/components/schemas/PatchOperation"
     # Python reserved words as field names
     Metadata:
       type: object
@@ -306,6 +323,28 @@ paths:
                 properties:
                   status:
                     type: string
+  /users/{userId}/patch:
+    patch:
+      operationId: patchUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PatchDocument"
+      responses:
+        "200":
+          description: Patched user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
   # Endpoint with no operationId
   /ping:
     get:

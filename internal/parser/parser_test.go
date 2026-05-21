@@ -338,6 +338,32 @@ func TestParseComplex(t *testing.T) {
 		t.Errorf("Order.status type = %+v, want PrimString (scalar enum ref)", statusField.Type)
 	}
 
+	// Array-type schema should not produce a model
+	if findModel(spec.Models, "PatchDocument") != nil {
+		t.Error("PatchDocument should not be emitted as a model (it's an array type)")
+	}
+
+	// PatchOperation should still be emitted (it's an object)
+	patchOp := findModel(spec.Models, "PatchOperation")
+	if patchOp == nil {
+		t.Fatal("PatchOperation model not found")
+	}
+
+	// Request body referencing array schema should resolve to TypeArray
+	patchUser := findEndpoint(spec.Endpoints, "patchUser")
+	if patchUser == nil {
+		t.Fatal("patchUser endpoint not found")
+	}
+	if patchUser.RequestBody == nil {
+		t.Fatal("patchUser.RequestBody is nil")
+	}
+	if patchUser.RequestBody.Kind != ir.TypeArray {
+		t.Errorf("patchUser.RequestBody kind = %v, want TypeArray", patchUser.RequestBody.Kind)
+	}
+	if patchUser.RequestBody.Elem == nil || patchUser.RequestBody.Elem.Ref != "PatchOperation" {
+		t.Errorf("patchUser.RequestBody.Elem = %+v, want TypeRef to PatchOperation", patchUser.RequestBody.Elem)
+	}
+
 	// All-optional model
 	filters := findModel(spec.Models, "SearchFilters")
 	if filters == nil {

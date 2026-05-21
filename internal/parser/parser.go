@@ -76,7 +76,7 @@ func buildIR(model *libopenapi.DocumentModel[v3.Document]) *ir.Spec {
 			if schema == nil {
 				continue
 			}
-			if isScalarSchema(schema) {
+			if !isObjectSchema(schema) {
 				continue
 			}
 			m := buildModel(sanitizeName(name), schema)
@@ -161,18 +161,15 @@ func schemaToType(proxy *base.SchemaProxy) ir.Type {
 		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}
 	}
 
-	// Check if this is a $ref to a named schema
+	// If this is a $ref to an object schema with properties, use TypeRef.
+	// Otherwise fall through to resolve the actual type from the schema.
 	ref := proxy.GetReference()
-	if ref != "" {
-		if isScalarSchema(schema) {
-			return scalarType(schema)
-		}
+	if ref != "" && isObjectSchema(schema) {
 		parts := strings.Split(ref, "/")
 		refName := sanitizeName(parts[len(parts)-1])
 		return ir.Type{Kind: ir.TypeRef, Ref: refName}
 	}
 
-	// Determine type from schema
 	types := schema.Type
 	if len(types) == 0 {
 		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}
@@ -336,34 +333,17 @@ func isJSONMediaType(mt string) bool {
 		strings.HasSuffix(mt, "+json")
 }
 
-func isScalarSchema(schema *base.Schema) bool {
+func isObjectSchema(schema *base.Schema) bool {
 	if schema == nil {
 		return false
 	}
 	if schema.Properties != nil && schema.Properties.Len() > 0 {
-		return false
+		return true
 	}
-	if len(schema.Type) == 0 {
-		return false
-	}
-	switch schema.Type[0] {
-	case "string", "integer", "number", "boolean":
+	if len(schema.Type) > 0 && schema.Type[0] == "object" {
 		return true
 	}
 	return false
-}
-
-func scalarType(schema *base.Schema) ir.Type {
-	switch schema.Type[0] {
-	case "integer":
-		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}
-	case "number":
-		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimFloat}
-	case "boolean":
-		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimBool}
-	default:
-		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}
-	}
 }
 
 // sanitizeName produces a valid identifier from a schema name by stripping
