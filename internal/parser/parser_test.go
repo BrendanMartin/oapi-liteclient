@@ -349,6 +349,15 @@ func TestParseComplex(t *testing.T) {
 		t.Fatal("PatchOperation model not found")
 	}
 
+	// Field with no type should resolve to PrimAny
+	valueField := findField(patchOp.Fields, "value")
+	if valueField == nil {
+		t.Fatal("PatchOperation.value not found")
+	}
+	if valueField.Type.Kind != ir.TypePrimitive || valueField.Type.Prim != ir.PrimAny {
+		t.Errorf("PatchOperation.value type = %+v, want PrimAny", valueField.Type)
+	}
+
 	// Request body referencing array schema should resolve to TypeArray
 	patchUser := findEndpoint(spec.Endpoints, "patchUser")
 	if patchUser == nil {

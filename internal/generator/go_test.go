@@ -81,6 +81,7 @@ func TestGoType(t *testing.T) {
 		{ir.Type{Kind: ir.TypeRef, Ref: "Pet"}, "Pet"},
 		{ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}}, "[]string"},
 		{ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypeRef, Ref: "Pet"}}, "[]Pet"},
+		{ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimAny}, "interface{}"},
 	}
 	for _, tt := range tests {
 		got := goType(tt.in)

@@ -172,7 +172,7 @@ func schemaToType(proxy *base.SchemaProxy) ir.Type {
 
 	types := schema.Type
 	if len(types) == 0 {
-		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}
+		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimAny}
 	}
 	typeName := types[0]
 
@@ -196,9 +196,9 @@ func schemaToType(proxy *base.SchemaProxy) ir.Type {
 			valType := schemaToType(schema.AdditionalProperties.A)
 			return ir.Type{Kind: ir.TypeMap, Elem: &valType}
 		}
-		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}
+		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimAny}
 	default:
-		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}
+		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimAny}
 	}
 }
 

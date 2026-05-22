@@ -62,6 +62,7 @@ const (
 	PrimInt
 	PrimFloat
 	PrimBool
+	PrimAny
 )
 
 // Endpoint is a single API operation.

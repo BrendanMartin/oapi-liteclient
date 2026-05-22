@@ -217,6 +217,8 @@ func pyType(t ir.Type) string {
 			return "float"
 		case ir.PrimBool:
 			return "bool"
+		case ir.PrimAny:
+			return "Any"
 		}
 	case ir.TypeArray:
 		if t.Elem != nil {
@@ -464,7 +466,7 @@ import google.auth.transport.requests
 import google.oauth2.id_token
 {{- end}}
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Any, Optional
 
 
 class APIError(Exception):
@@ -682,7 +684,7 @@ import google.auth.transport.requests
 import google.oauth2.id_token
 {{- end}}
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 
 class APIError(Exception):
@@ -882,7 +884,7 @@ import time
 import google.auth.transport.requests
 import google.oauth2.id_token
 {{- end}}
-from typing import Optional
+from typing import Any, Optional
 
 
 class APIError(Exception):
@@ -988,7 +990,7 @@ const pyModelsTemplate = `"""Auto-generated models."""
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Any, Optional
 
 {{range .Models}}
 class {{.Name}}(BaseModel):
@@ -1033,7 +1035,7 @@ class {{.Name}}(BaseModel):
 const pyTagTemplate = `"""Auto-generated tag client."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from ._base import BaseClient
 from .models import *
@@ -1150,7 +1152,7 @@ import time
 import google.auth.transport.requests
 import google.oauth2.id_token
 {{- end}}
-from typing import Optional
+from typing import Any, Optional
 
 
 class APIError(Exception):
@@ -1256,7 +1258,7 @@ const pyModelsDcTemplate = `"""Auto-generated models."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 {{range .Models}}
 @dataclass
@@ -1282,7 +1284,7 @@ class {{.Name}}:
 const pyTagDcTemplate = `"""Auto-generated tag client."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from ._base import BaseClient
 from .models import *

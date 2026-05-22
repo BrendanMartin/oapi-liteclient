@@ -77,6 +77,7 @@ func TestPyType(t *testing.T) {
 		{ir.Type{Kind: ir.TypeRef, Ref: "Pet"}, "Pet"},
 		{ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}}, "list[str]"},
 		{ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypeRef, Ref: "Pet"}}, "list[Pet]"},
+		{ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimAny}, "Any"},
 	}
 	for _, tt := range tests {
 		got := pyType(tt.in)

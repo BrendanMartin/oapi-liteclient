@@ -80,6 +80,8 @@ func goType(t ir.Type) string {
 			return "float64"
 		case ir.PrimBool:
 			return "bool"
+		case ir.PrimAny:
+			return "interface{}"
 		}
 	case ir.TypeArray:
 		if t.Elem != nil {

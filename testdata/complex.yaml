@@ -122,7 +122,7 @@ components:
         path:
           type: string
         value:
-          type: string
+          description: The value to set (any JSON type)
     PatchDocument:
       type: array
       items:
