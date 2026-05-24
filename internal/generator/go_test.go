@@ -2,6 +2,9 @@ package generator
 
 import (
 	"go/format"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -15,6 +18,25 @@ func mustGenerateGo(t *testing.T, spec *ir.Spec, opts GoOptions) map[string]stri
 		t.Fatalf("GenerateGo: %v", err)
 	}
 	return files
+}
+
+func mustCompileGo(t *testing.T, files map[string]string, pkg string) {
+	t.Helper()
+	dir := t.TempDir()
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatalf("writing %s: %v", name, err)
+		}
+	}
+	goMod := "module test/" + pkg + "\n\ngo 1.22\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatalf("writing go.mod: %v", err)
+	}
+	cmd := exec.Command("go", "build", "./...")
+	cmd.Dir = dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("generated code does not compile:\n%s", out)
+	}
 }
 
 func TestGoName(t *testing.T) {
@@ -758,6 +780,8 @@ func TestGenerateGoTagSplit(t *testing.T) {
 			t.Error("users.go should contain GetUser method")
 		}
 	}
+
+	mustCompileGo(t, files, "myapi")
 }
 
 func TestGenerateGoTagMerge(t *testing.T) {
@@ -803,6 +827,8 @@ func TestGenerateGoTagMerge(t *testing.T) {
 	if _, ok := files["customer.go"]; !ok {
 		t.Error("customer.go should still exist as a separate file")
 	}
+
+	mustCompileGo(t, files, "testapi")
 }
 
 func TestGenerateGoNoTagsSingleFile(t *testing.T) {
@@ -821,4 +847,6 @@ func TestGenerateGoNoTagsSingleFile(t *testing.T) {
 	if _, ok := files["client.go"]; !ok {
 		t.Error("no-tag spec should produce client.go")
 	}
+
+	mustCompileGo(t, files, "testapi")
 }

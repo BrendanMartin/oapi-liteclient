@@ -3,12 +3,12 @@ package generator
 import (
 	"bytes"
 	"fmt"
-	"go/format"
 	"strings"
 	"text/template"
 	"unicode"
 
 	"github.com/brendanmartin/oapi-liteclient/internal/ir"
+	"golang.org/x/tools/imports"
 )
 
 // GoOptions configures the Go code generator.
@@ -179,7 +179,7 @@ var goClientSplitTmpl = template.Must(template.New("goClientSplit").Funcs(goFunc
 var goTagTmpl = template.Must(template.New("goTag").Funcs(goFuncMap).Parse(goTagTemplate))
 
 func goFormat(src []byte) (string, error) {
-	formatted, err := format.Source(src)
+	formatted, err := imports.Process("", src, nil)
 	if err != nil {
 		return string(src), fmt.Errorf("formatting output: %w (raw output may have syntax errors)", err)
 	}
@@ -774,7 +774,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 )
 {{range .Endpoints}}
