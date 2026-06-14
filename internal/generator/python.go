@@ -66,6 +66,7 @@ var funcMap = template.FuncMap{
 	"isArrayBody":         func(t *ir.Type) bool { return t != nil && t.Kind == ir.TypeArray },
 	"hasResponse":         func(t *ir.Type) bool { return t != nil },
 	"hasParams":           func(ep ir.Endpoint) bool { return len(ep.Params) > 0 || ep.RequestBody != nil },
+	"customCType":         customContentType,
 	"docstring":           docstring,
 	"sortedFields":        sortedFields,
 	"pathParams":          pathParams,
@@ -647,6 +648,9 @@ class Client:
 {{- else}}
             json=req.model_dump(exclude_none=True, by_alias=True),
 {{- end}}
+{{- if customCType .}}
+            headers={"Content-Type": "{{.RequestCType}}"},
+{{- end}}
 {{- end}}
 {{- if queryParams .Params}}
             params=params,
@@ -845,6 +849,9 @@ class Client:
             json=[item.__dict__ for item in req] if req and hasattr(req[0], "__dict__") else req,
 {{- else}}
             json=req.__dict__ if hasattr(req, "__dict__") else req,
+{{- end}}
+{{- if customCType .}}
+            headers={"Content-Type": "{{.RequestCType}}"},
 {{- end}}
 {{- end}}
 {{- if queryParams .Params}}
@@ -1087,6 +1094,9 @@ class {{.ClassName}}:
             json=[item.model_dump(exclude_none=True, by_alias=True) for item in req],
 {{- else}}
             json=req.model_dump(exclude_none=True, by_alias=True),
+{{- end}}
+{{- if customCType .}}
+            headers={"Content-Type": "{{.RequestCType}}"},
 {{- end}}
 {{- end}}
 {{- if queryParams .Params}}
@@ -1336,6 +1346,9 @@ class {{.ClassName}}:
             json=[item.__dict__ for item in req] if req and hasattr(req[0], "__dict__") else req,
 {{- else}}
             json=req.__dict__ if hasattr(req, "__dict__") else req,
+{{- end}}
+{{- if customCType .}}
+            headers={"Content-Type": "{{.RequestCType}}"},
 {{- end}}
 {{- end}}
 {{- if queryParams .Params}}

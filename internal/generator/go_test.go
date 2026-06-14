@@ -303,6 +303,45 @@ func TestGenerateGoSimpleEndpoint(t *testing.T) {
 	}
 }
 
+func TestGenerateGoCustomContentType(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Patch API",
+		Models: []ir.Model{
+			{Name: "Item", Fields: []ir.Field{{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true}}},
+		},
+		Endpoints: []ir.Endpoint{
+			{
+				OperationID:  "patchItem",
+				Method:       "PATCH",
+				Path:         "/items/{id}",
+				Params:       []ir.Param{{Name: "id", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true}},
+				RequestBody:  &ir.Type{Kind: ir.TypeRef, Ref: "Item"},
+				RequestCType: "application/json-patch+json",
+			},
+			{
+				OperationID:  "replaceItem",
+				Method:       "PUT",
+				Path:         "/items/{id}",
+				Params:       []ir.Param{{Name: "id", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true}},
+				RequestBody:  &ir.Type{Kind: ir.TypeRef, Ref: "Item"},
+				RequestCType: "application/json",
+			},
+		},
+	}
+
+	output := mustGenerateGo(t, spec, GoOptions{Auth: "none", Package: "patchapi"})["client.go"]
+
+	if _, err := format.Source([]byte(output)); err != nil {
+		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
+	}
+	if !strings.Contains(output, `r.client.do(r.ctx, "PATCH", path, "application/json-patch+json", r.body)`) {
+		t.Error("PATCH endpoint should pass its custom media type to do()")
+	}
+	if !strings.Contains(output, `r.client.do(r.ctx, "PUT", path, "application/json", r.body)`) {
+		t.Error("PUT endpoint should pass application/json to do()")
+	}
+}
+
 func TestGenerateGoOptionalQueryParams(t *testing.T) {
 	spec := &ir.Spec{
 		Title:   "Test API",

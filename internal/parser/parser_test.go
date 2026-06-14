@@ -97,6 +97,9 @@ func TestParsePetstore(t *testing.T) {
 	if createPet.RequestBody.Ref != "PetCreate" {
 		t.Errorf("createPet.RequestBody.Ref = %q, want PetCreate", createPet.RequestBody.Ref)
 	}
+	if createPet.RequestCType != "application/json" {
+		t.Errorf("createPet.RequestCType = %q, want application/json", createPet.RequestCType)
+	}
 
 	deletePet := findEndpoint(spec.Endpoints, "deletePet")
 	if deletePet == nil {
@@ -230,6 +233,9 @@ func TestParseSwaggerV2(t *testing.T) {
 	}
 	if createPet.RequestBody.Ref != "PetCreate" {
 		t.Errorf("createPet.RequestBody.Ref = %q, want PetCreate", createPet.RequestBody.Ref)
+	}
+	if createPet.RequestCType != "application/json" {
+		t.Errorf("createPet.RequestCType = %q, want application/json", createPet.RequestCType)
 	}
 
 	deletePet := findEndpoint(spec.Endpoints, "deletePet")

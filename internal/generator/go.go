@@ -382,7 +382,7 @@ func NewClient(targetAudience string) (*Client, error) {
 }
 {{- end}}
 
-func (c *Client) do(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+func (c *Client) do(ctx context.Context, method, path, contentType string, body interface{}) (*http.Response, error) {
 	var reqBody io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -400,7 +400,10 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}) 
 		return nil, err
 	}
 	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+		if contentType == "" {
+			contentType = "application/json"
+		}
+		req.Header.Set("Content-Type", contentType)
 	}
 {{- if eq .AuthMode "bearer-token"}}
 	req.Header.Set("Authorization", "Bearer "+c.bearerToken)
@@ -511,9 +514,9 @@ func (r *{{$opName}}Op) Do() ({{goTypeDeref .ResponseType}}, error) {
 		path += "?" + query.Encode()
 	}
 {{- if hasBody .RequestBody}}
-	resp, err := r.client.do(r.ctx, "{{.Method}}", path, r.body)
+	resp, err := r.client.do(r.ctx, "{{.Method}}", path, "{{.RequestCType}}", r.body)
 {{- else}}
-	resp, err := r.client.do(r.ctx, "{{.Method}}", path, nil)
+	resp, err := r.client.do(r.ctx, "{{.Method}}", path, "", nil)
 {{- end}}
 	if err != nil {
 {{- if isArrayResponse .ResponseType}}
@@ -563,9 +566,9 @@ func (r *{{$opName}}Op) Do() error {
 		path += "?" + query.Encode()
 	}
 {{- if hasBody .RequestBody}}
-	resp, err := r.client.do(r.ctx, "{{.Method}}", path, r.body)
+	resp, err := r.client.do(r.ctx, "{{.Method}}", path, "{{.RequestCType}}", r.body)
 {{- else}}
-	resp, err := r.client.do(r.ctx, "{{.Method}}", path, nil)
+	resp, err := r.client.do(r.ctx, "{{.Method}}", path, "", nil)
 {{- end}}
 	if err != nil {
 		return err
@@ -712,7 +715,7 @@ func NewClient(targetAudience string) (*Client, error) {
 }
 {{- end}}
 
-func (c *Client) do(ctx context.Context, method, path string, body interface{}) (*http.Response, error) {
+func (c *Client) do(ctx context.Context, method, path, contentType string, body interface{}) (*http.Response, error) {
 	var reqBody io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -730,7 +733,10 @@ func (c *Client) do(ctx context.Context, method, path string, body interface{}) 
 		return nil, err
 	}
 	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+		if contentType == "" {
+			contentType = "application/json"
+		}
+		req.Header.Set("Content-Type", contentType)
 	}
 {{- if eq .AuthMode "bearer-token"}}
 	req.Header.Set("Authorization", "Bearer "+c.bearerToken)
@@ -852,9 +858,9 @@ func (r *{{$opName}}Op) Do() ({{goTypeDeref .ResponseType}}, error) {
 		path += "?" + query.Encode()
 	}
 {{- if hasBody .RequestBody}}
-	resp, err := r.client.do(r.ctx, "{{.Method}}", path, r.body)
+	resp, err := r.client.do(r.ctx, "{{.Method}}", path, "{{.RequestCType}}", r.body)
 {{- else}}
-	resp, err := r.client.do(r.ctx, "{{.Method}}", path, nil)
+	resp, err := r.client.do(r.ctx, "{{.Method}}", path, "", nil)
 {{- end}}
 	if err != nil {
 {{- if isArrayResponse .ResponseType}}
@@ -904,9 +910,9 @@ func (r *{{$opName}}Op) Do() error {
 		path += "?" + query.Encode()
 	}
 {{- if hasBody .RequestBody}}
-	resp, err := r.client.do(r.ctx, "{{.Method}}", path, r.body)
+	resp, err := r.client.do(r.ctx, "{{.Method}}", path, "{{.RequestCType}}", r.body)
 {{- else}}
-	resp, err := r.client.do(r.ctx, "{{.Method}}", path, nil)
+	resp, err := r.client.do(r.ctx, "{{.Method}}", path, "", nil)
 {{- end}}
 	if err != nil {
 		return err

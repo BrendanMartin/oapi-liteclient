@@ -252,6 +252,7 @@ func buildEndpoints(path string, pathItem *v3.PathItem) []ir.Endpoint {
 				if isJSONMediaType(mediaType) && content.Schema != nil {
 					t := schemaToType(content.Schema)
 					ep.RequestBody = &t
+					ep.RequestCType = mediaType
 					break
 				}
 			}
@@ -324,6 +325,20 @@ func deriveOperationID(method, path string) string {
 		}
 	}
 	return strings.Join(parts, "")
+}
+
+// consumesContentType picks the request media type for a Swagger 2.0 body
+// parameter from the operation-level then global "consumes" lists, preferring
+// the first JSON media type and defaulting to application/json.
+func consumesContentType(opConsumes, globalConsumes []string) string {
+	for _, list := range [][]string{opConsumes, globalConsumes} {
+		for _, mt := range list {
+			if isJSONMediaType(mt) {
+				return mt
+			}
+		}
+	}
+	return "application/json"
 }
 
 // isJSONMediaType returns true for media types that carry JSON content.

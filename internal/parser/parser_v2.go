@@ -40,7 +40,7 @@ func buildIRFromV2(model *libopenapi.DocumentModel[v2.Swagger]) *ir.Spec {
 	seenOps := make(map[string]bool)
 	if model.Model.Paths != nil && model.Model.Paths.PathItems != nil {
 		for path, pathItem := range model.Model.Paths.PathItems.FromOldest() {
-			for _, ep := range buildEndpointsV2(path, pathItem) {
+			for _, ep := range buildEndpointsV2(path, pathItem, model.Model.Consumes) {
 				if seenOps[ep.OperationID] {
 					continue
 				}
@@ -78,7 +78,7 @@ func extractAuthV2(model *libopenapi.DocumentModel[v2.Swagger]) *ir.Auth {
 	return nil
 }
 
-func buildEndpointsV2(path string, pathItem *v2.PathItem) []ir.Endpoint {
+func buildEndpointsV2(path string, pathItem *v2.PathItem, globalConsumes []string) []ir.Endpoint {
 	var endpoints []ir.Endpoint
 
 	ops := map[string]*v2.Operation{
@@ -111,6 +111,7 @@ func buildEndpointsV2(path string, pathItem *v2.PathItem) []ir.Endpoint {
 				if param.Schema != nil {
 					t := schemaToType(param.Schema)
 					ep.RequestBody = &t
+					ep.RequestCType = consumesContentType(op.Consumes, globalConsumes)
 				}
 				continue
 			}

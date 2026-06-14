@@ -9,6 +9,13 @@ import (
 	"github.com/brendanmartin/oapi-liteclient/internal/ir"
 )
 
+// customContentType reports whether an endpoint's request body uses a media
+// type other than the default application/json (e.g. application/json-patch+json),
+// which must be emitted as an explicit Content-Type header.
+func customContentType(ep ir.Endpoint) bool {
+	return ep.RequestCType != "" && ep.RequestCType != "application/json"
+}
+
 var reservedFilenames = map[string]bool{
 	"client":   true,
 	"_base":    true,

@@ -74,8 +74,9 @@ type Endpoint struct {
 	Path         string // e.g. /pets/{petId}
 	Tags         []string
 	Params       []Param
-	RequestBody  *Type // nil if no body
-	ResponseType *Type // nil if no response body (e.g. 204)
+	RequestBody  *Type  // nil if no body
+	RequestCType string // media type of the request body, e.g. "application/json-patch+json"; empty if no body
+	ResponseType *Type  // nil if no response body (e.g. 204)
 }
 
 // Param is a path or query parameter.

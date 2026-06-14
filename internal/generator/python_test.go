@@ -151,6 +151,42 @@ func TestGeneratePythonMinimal(t *testing.T) {
 	}
 }
 
+func TestGeneratePythonCustomContentType(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Patch API",
+		Models: []ir.Model{
+			{Name: "Item", Fields: []ir.Field{{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}}}},
+		},
+		Endpoints: []ir.Endpoint{
+			{
+				OperationID:  "patchItem",
+				Method:       "PATCH",
+				Path:         "/items/{id}",
+				Params:       []ir.Param{{Name: "id", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true}},
+				RequestBody:  &ir.Type{Kind: ir.TypeRef, Ref: "Item"},
+				RequestCType: "application/json-patch+json",
+			},
+			{
+				OperationID:  "replaceItem",
+				Method:       "PUT",
+				Path:         "/items/{id}",
+				Params:       []ir.Param{{Name: "id", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true}},
+				RequestBody:  &ir.Type{Kind: ir.TypeRef, Ref: "Item"},
+				RequestCType: "application/json",
+			},
+		},
+	}
+
+	output := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic", Auth: "none"})["client.py"]
+
+	if !strings.Contains(output, `headers={"Content-Type": "application/json-patch+json"}`) {
+		t.Error("PATCH endpoint should emit explicit Content-Type header for non-default media type")
+	}
+	if strings.Contains(output, `headers={"Content-Type": "application/json"}`) {
+		t.Error("default application/json body should not emit an explicit Content-Type header")
+	}
+}
+
 func TestGeneratePythonNoAuth(t *testing.T) {
 	spec := &ir.Spec{
 		Title: "No Auth API",
