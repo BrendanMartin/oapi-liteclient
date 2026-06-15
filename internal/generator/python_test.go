@@ -245,6 +245,27 @@ func TestGeneratePythonMultipartDataclass(t *testing.T) {
 	}
 }
 
+func TestGeneratePythonMultipartTagSplitUsesBaseClientRequest(t *testing.T) {
+	for _, style := range []string{"pydantic", "dataclass"} {
+		t.Run(style, func(t *testing.T) {
+			spec := multipartSpec()
+			spec.Endpoints[0].Tags = []string{"Attachments"}
+
+			files := mustGeneratePython(t, spec, PythonOptions{Style: style, Auth: "none"})
+			attachments, ok := files["attachments.py"]
+			if !ok {
+				t.Fatalf("missing attachments.py, got files: %v", fileNames(files))
+			}
+			if !strings.Contains(attachments, "resp = self._client._request(") {
+				t.Error("split multipart method should call through the BaseClient")
+			}
+			if strings.Contains(attachments, "resp = self._request(") {
+				t.Error("split multipart method should not call an undefined sub-client _request method")
+			}
+		})
+	}
+}
+
 func TestGeneratePythonPackageVersion(t *testing.T) {
 	spec := &ir.Spec{
 		Title:     "Versioned API",

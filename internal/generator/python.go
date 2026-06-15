@@ -62,21 +62,22 @@ var funcMap = template.FuncMap{
 		}
 		return false
 	},
-	"pyDefaultVal":        pyDefaultVal,
-	"hasBody":             func(t *ir.Type) bool { return t != nil },
-	"isArrayBody":         func(t *ir.Type) bool { return t != nil && t.Kind == ir.TypeArray },
-	"hasResponse":         func(t *ir.Type) bool { return t != nil },
-	"hasParams":           func(ep ir.Endpoint) bool { return len(ep.Params) > 0 || ep.RequestBody != nil },
-	"customCType":         customContentType,
-	"isMultipart":         isMultipart,
-	"pyMultipartMethod":   pyMultipartMethod,
-	"docstring":           docstring,
-	"sortedFields":        sortedFields,
-	"pathParams":          pathParams,
-	"queryParams":         queryParams,
-	"requiredQueryParams": requiredQueryParams,
-	"optionalQueryParams": optionalQueryParams,
-	"fmtPath":             fmtPath,
+	"pyDefaultVal":               pyDefaultVal,
+	"hasBody":                    func(t *ir.Type) bool { return t != nil },
+	"isArrayBody":                func(t *ir.Type) bool { return t != nil && t.Kind == ir.TypeArray },
+	"hasResponse":                func(t *ir.Type) bool { return t != nil },
+	"hasParams":                  func(ep ir.Endpoint) bool { return len(ep.Params) > 0 || ep.RequestBody != nil },
+	"customCType":                customContentType,
+	"isMultipart":                isMultipart,
+	"pyMultipartMethod":          pyMultipartMethod,
+	"pyMultipartSubclientMethod": pyMultipartSubclientMethod,
+	"docstring":                  docstring,
+	"sortedFields":               sortedFields,
+	"pathParams":                 pathParams,
+	"queryParams":                queryParams,
+	"requiredQueryParams":        requiredQueryParams,
+	"optionalQueryParams":        optionalQueryParams,
+	"fmtPath":                    fmtPath,
 }
 
 var pydanticTmpl = template.Must(template.New("pydantic").Funcs(funcMap).Parse(pydanticTemplate))
@@ -301,6 +302,14 @@ func pyMethodName(opID string) string {
 // their original (possibly dotted) wire keys. The body is identical for pydantic
 // and dataclass styles except for the response-decode statement.
 func pyMultipartMethod(ep ir.Endpoint, style string) string {
+	return pyMultipartMethodWithRequest(ep, style, "self._request")
+}
+
+func pyMultipartSubclientMethod(ep ir.Endpoint, style string) string {
+	return pyMultipartMethodWithRequest(ep, style, "self._client._request")
+}
+
+func pyMultipartMethodWithRequest(ep ir.Endpoint, style, requestExpr string) string {
 	files := formFileFields(ep.FormFields)
 	required := formRequiredFields(ep.FormFields)
 	optional := formOptionalFields(ep.FormFields)
@@ -342,7 +351,7 @@ func pyMultipartMethod(ep ir.Endpoint, style string) string {
 		fmt.Fprintf(&b, "        if %s is not None:\n            data[%q] = %s\n", pyName(f.Name), f.Key, pyName(f.Name))
 	}
 
-	fmt.Fprintf(&b, "        resp = self._request(\n            %q,\n            f\"%s\",\n            files=files,\n            data=data,\n        )\n", ep.Method, fmtPath(ep.Path))
+	fmt.Fprintf(&b, "        resp = %s(\n            %q,\n            f\"%s\",\n            files=files,\n            data=data,\n        )\n", requestExpr, ep.Method, fmtPath(ep.Path))
 	fmt.Fprintf(&b, "        %s\n", pyReturnStmt(ep, style))
 	return b.String()
 }
@@ -1146,7 +1155,7 @@ class {{.ClassName}}:
     def __init__(self, client: BaseClient):
         self._client = client
 {{range .Endpoints}}
-{{- if isMultipart .}}{{pyMultipartMethod . $style}}
+{{- if isMultipart .}}{{pyMultipartSubclientMethod . $style}}
 {{- else}}
 {{- if hasParams .}}
     def {{pyMethodName .OperationID}}(
@@ -1402,7 +1411,7 @@ class {{.ClassName}}:
     def __init__(self, client: BaseClient):
         self._client = client
 {{range .Endpoints}}
-{{- if isMultipart .}}{{pyMultipartMethod . $style}}
+{{- if isMultipart .}}{{pyMultipartSubclientMethod . $style}}
 {{- else}}
 {{- if hasParams .}}
     def {{pyMethodName .OperationID}}(
