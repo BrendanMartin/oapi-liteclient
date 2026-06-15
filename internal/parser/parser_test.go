@@ -841,6 +841,45 @@ paths:
 	}
 }
 
+func TestParseV2OperationProducesOverridesGlobal(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "override-v2.yaml")
+	// Global produces is JSON, but the operation overrides to a non-JSON,
+	// non-binary type. Per Swagger 2, the operation wins: the body is not JSON,
+	// so it must not be decoded.
+	specYAML := `swagger: "2.0"
+info: {title: Override V2 API, version: "1.0"}
+host: api.example.com
+schemes: [https]
+produces: [application/json]
+paths:
+  /raw:
+    get:
+      operationId: getRaw
+      produces: [application/octet-stream]
+      responses:
+        "200":
+          description: raw
+          schema:
+            type: string
+`
+	if err := os.WriteFile(specPath, []byte(specYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	spec, err := Parse(specPath)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	ep := findEndpoint(spec.Endpoints, "getRaw")
+	if ep == nil {
+		t.Fatal("getRaw endpoint missing")
+	}
+	if ep.ResponseType != nil {
+		t.Fatalf("ResponseType = %+v, operation-level non-JSON produces must override global", ep.ResponseType)
+	}
+}
+
 func testdataPath(name string) string {
 	// Walk up from internal/parser to project root
 	wd, _ := os.Getwd()

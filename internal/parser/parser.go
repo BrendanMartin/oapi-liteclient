@@ -291,7 +291,9 @@ func schemaToType(proxy *base.SchemaProxy) ir.Type {
 	case "file":
 		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimBytes}
 	case "string":
-		if schema.Format == "binary" || schema.Format == "byte" {
+		// format: binary is raw bytes (files). format: byte is a base64 string,
+		// which the client does not decode, so it stays a string.
+		if schema.Format == "binary" {
 			return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimBytes}
 		}
 		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}

@@ -156,15 +156,15 @@ func buildEndpointsV2(path string, pathItem *v2.PathItem, globalConsumes, global
 }
 
 func producesJSON(opProduces, globalProduces []string) bool {
-	if len(opProduces) == 0 && len(globalProduces) == 0 {
-		return true
+	// Swagger 2 operation-level produces overrides global; it does not union.
+	produces := opProduces
+	if len(produces) == 0 {
+		produces = globalProduces
 	}
-	for _, list := range [][]string{opProduces, globalProduces} {
-		if slices.ContainsFunc(list, isJSONMediaType) {
-			return true
-		}
+	if len(produces) == 0 {
+		return true // no produces declared: assume JSON (Swagger 2 default)
 	}
-	return false
+	return slices.ContainsFunc(produces, isJSONMediaType)
 }
 
 func primitiveType(typeName string) ir.Type {
