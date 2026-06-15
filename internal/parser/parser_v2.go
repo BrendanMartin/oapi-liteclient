@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/brendanmartin/oapi-liteclient/internal/ir"
@@ -159,10 +160,8 @@ func producesJSON(opProduces, globalProduces []string) bool {
 		return true
 	}
 	for _, list := range [][]string{opProduces, globalProduces} {
-		for _, mt := range list {
-			if isJSONMediaType(mt) {
-				return true
-			}
+		if slices.ContainsFunc(list, isJSONMediaType) {
+			return true
 		}
 	}
 	return false
