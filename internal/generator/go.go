@@ -82,6 +82,8 @@ func goType(t ir.Type) string {
 			return "bool"
 		case ir.PrimAny:
 			return "interface{}"
+		case ir.PrimBytes:
+			return "[]byte"
 		}
 	case ir.TypeArray:
 		if t.Elem != nil {
@@ -154,6 +156,7 @@ var goFuncMap = template.FuncMap{
 	"hasResponse":         func(t *ir.Type) bool { return t != nil },
 	"isArrayResponse":     func(t *ir.Type) bool { return t != nil && t.Kind == ir.TypeArray },
 	"isRefResponse":       func(t *ir.Type) bool { return t != nil && t.Kind == ir.TypeRef },
+	"isBytesResponse":     (*ir.Type).IsBytes,
 	"pathParams":          pathParams,
 	"queryParams":         queryParams,
 	"requiredQueryParams": requiredQueryParams,
@@ -537,6 +540,9 @@ func (r *{{$opName}}Op) Do() ({{goTypeDeref .ResponseType}}, error) {
 {{- end}}
 	}
 	defer resp.Body.Close()
+{{- if isBytesResponse .ResponseType}}
+	return io.ReadAll(resp.Body)
+{{- else}}
 	var result {{goTypeDeref .ResponseType}}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 {{- if isArrayResponse .ResponseType}}
@@ -549,6 +555,7 @@ func (r *{{$opName}}Op) Do() ({{goTypeDeref .ResponseType}}, error) {
 {{- end}}
 	}
 	return result, nil
+{{- end}}
 }
 {{- else}}
 func (r *{{$opName}}Op) Do() error {
@@ -716,8 +723,12 @@ func goMultipartMethod(ep ir.Endpoint) string {
 	if hasResp {
 		retType := goType(*ep.ResponseType)
 		b.WriteString("\tif err != nil {\n\t\treturn zero, err\n\t}\n\tdefer resp.Body.Close()\n")
-		fmt.Fprintf(&b, "\tvar result %s\n", retType)
-		b.WriteString("\tif err := json.NewDecoder(resp.Body).Decode(&result); err != nil {\n\t\treturn zero, fmt.Errorf(\"decoding response: %w\", err)\n\t}\n\treturn result, nil\n}\n")
+		if ep.ResponseType.IsBytes() {
+			b.WriteString("\treturn io.ReadAll(resp.Body)\n}\n")
+		} else {
+			fmt.Fprintf(&b, "\tvar result %s\n", retType)
+			b.WriteString("\tif err := json.NewDecoder(resp.Body).Decode(&result); err != nil {\n\t\treturn zero, fmt.Errorf(\"decoding response: %w\", err)\n\t}\n\treturn result, nil\n}\n")
+		}
 	} else {
 		b.WriteString("\tif err != nil {\n\t\treturn err\n\t}\n\tresp.Body.Close()\n\treturn nil\n}\n")
 	}
@@ -1006,6 +1017,9 @@ func (r *{{$opName}}Op) Do() ({{goTypeDeref .ResponseType}}, error) {
 {{- end}}
 	}
 	defer resp.Body.Close()
+{{- if isBytesResponse .ResponseType}}
+	return io.ReadAll(resp.Body)
+{{- else}}
 	var result {{goTypeDeref .ResponseType}}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 {{- if isArrayResponse .ResponseType}}
@@ -1018,6 +1032,7 @@ func (r *{{$opName}}Op) Do() ({{goTypeDeref .ResponseType}}, error) {
 {{- end}}
 	}
 	return result, nil
+{{- end}}
 }
 {{- else}}
 func (r *{{$opName}}Op) Do() error {

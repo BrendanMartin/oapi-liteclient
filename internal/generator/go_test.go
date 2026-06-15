@@ -104,6 +104,7 @@ func TestGoType(t *testing.T) {
 		{ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}}, "[]string"},
 		{ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypeRef, Ref: "Pet"}}, "[]Pet"},
 		{ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimAny}, "interface{}"},
+		{ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimBytes}, "[]byte"},
 	}
 	for _, tt := range tests {
 		got := goType(tt.in)
@@ -138,6 +139,66 @@ func TestGoFmtPath(t *testing.T) {
 				t.Errorf("goFmtPath(%q) args[%d] = %q, want %q", tt.in, i, gotArgs[i], tt.wantArgs[i])
 			}
 		}
+	}
+}
+
+func TestGenerateGoBytesResponse(t *testing.T) {
+	spec := &ir.Spec{
+		Title:   "Binary API",
+		BaseURL: "https://api.example.com",
+		Endpoints: []ir.Endpoint{
+			{
+				OperationID:  "downloadQuotePdf",
+				Method:       "GET",
+				Path:         "/quotes/{quoteId}/pdf",
+				Params:       []ir.Param{{Name: "quoteId", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}},
+				ResponseType: &ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimBytes},
+			},
+		},
+	}
+
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "none", Package: "binaryapi"})
+	output := files["client.go"]
+	mustCompileGo(t, files, "binaryapi")
+
+	checks := []string{
+		"func (r *DownloadQuotePdfOp) Do() ([]byte, error) {",
+		"return io.ReadAll(resp.Body)",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("output missing %q\n\nFull output:\n%s", check, output)
+		}
+	}
+	if strings.Contains(output, "json.NewDecoder(resp.Body).Decode") {
+		t.Errorf("bytes endpoint should not decode JSON\n\nFull output:\n%s", output)
+	}
+}
+
+func TestGenerateGoBytesResponseTagSplit(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Tagged Binary API",
+		Endpoints: []ir.Endpoint{
+			{
+				OperationID:  "downloadQuotePdf",
+				Method:       "GET",
+				Path:         "/quotes/{quoteId}/pdf",
+				Tags:         []string{"Quote"},
+				Params:       []ir.Param{{Name: "quoteId", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}},
+				ResponseType: &ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimBytes},
+			},
+		},
+	}
+
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "none", Package: "binaryapi"})
+	quote := files["quote.go"]
+	mustCompileGo(t, files, "binaryapi")
+
+	if !strings.Contains(quote, "func (r *DownloadQuotePdfOp) Do() ([]byte, error) {") {
+		t.Errorf("tag client should type []byte response\n\nFull output:\n%s", quote)
+	}
+	if !strings.Contains(quote, "return io.ReadAll(resp.Body)") {
+		t.Errorf("tag client should return io.ReadAll(resp.Body)\n\nFull output:\n%s", quote)
 	}
 }
 
