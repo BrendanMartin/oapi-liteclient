@@ -288,7 +288,12 @@ func schemaToType(proxy *base.SchemaProxy) ir.Type {
 	typeName := types[0]
 
 	switch typeName {
+	case "file":
+		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimBytes}
 	case "string":
+		if schema.Format == "binary" || schema.Format == "byte" {
+			return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimBytes}
+		}
 		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}
 	case "integer":
 		return ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}
@@ -375,18 +380,30 @@ func buildEndpoints(path string, pathItem *v3.PathItem) []ir.Endpoint {
 			}
 		}
 
-		// Response type (first 2xx response with JSON body)
+		// Response type (first 2xx response with JSON body; otherwise binary body)
 		if op.Responses != nil && op.Responses.Codes != nil {
 			for code, resp := range op.Responses.Codes.FromOldest() {
 				if !strings.HasPrefix(code, "2") {
 					continue
 				}
 				if resp.Content != nil {
+					// JSON wins when an operation offers both JSON and binary bodies.
 					for mediaType, content := range resp.Content.FromOldest() {
 						if isJSONMediaType(mediaType) && content.Schema != nil {
 							t := schemaToType(content.Schema)
 							ep.ResponseType = &t
 							break
+						}
+					}
+					if ep.ResponseType == nil {
+						for mediaType, content := range resp.Content.FromOldest() {
+							if isJSONMediaType(mediaType) || content.Schema == nil {
+								continue
+							}
+							if t := schemaToType(content.Schema); t.IsBytes() {
+								ep.ResponseType = &t
+								break
+							}
 						}
 					}
 				}

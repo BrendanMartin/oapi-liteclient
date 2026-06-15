@@ -655,6 +655,157 @@ paths: {}
 	}
 }
 
+func TestParseBinaryResponseV3(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "binary.yaml")
+	specYAML := `openapi: 3.0.0
+info: {title: Binary API, version: "1.0"}
+paths:
+  /quotes/{quoteId}/pdf:
+    get:
+      operationId: downloadQuotePdf
+      parameters:
+        - name: quoteId
+          in: path
+          required: true
+          schema: {type: integer}
+      responses:
+        "200":
+          description: PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+`
+	if err := os.WriteFile(specPath, []byte(specYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	spec, err := Parse(specPath)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	ep := findEndpoint(spec.Endpoints, "downloadQuotePdf")
+	if ep == nil {
+		t.Fatal("downloadQuotePdf endpoint missing")
+	}
+	if ep.ResponseType == nil || !ep.ResponseType.IsBytes() {
+		t.Fatalf("ResponseType = %+v, want PrimBytes", ep.ResponseType)
+	}
+}
+
+func TestParseJSONResponseWinsOverBinaryV3(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "json-wins.yaml")
+	specYAML := `openapi: 3.0.0
+info: {title: JSON Wins API, version: "1.0"}
+paths:
+  /quotes/{quoteId}:
+    get:
+      operationId: getQuote
+      responses:
+        "200":
+          description: JSON or PDF
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: integer}
+`
+	if err := os.WriteFile(specPath, []byte(specYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	spec, err := Parse(specPath)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	ep := findEndpoint(spec.Endpoints, "getQuote")
+	if ep == nil {
+		t.Fatal("getQuote endpoint missing")
+	}
+	if ep.ResponseType == nil || ep.ResponseType.IsBytes() {
+		t.Fatalf("ResponseType = %+v, want JSON-derived non-bytes type", ep.ResponseType)
+	}
+}
+
+func TestParseTextResponseIsNotBytesV3(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "text.yaml")
+	specYAML := `openapi: 3.0.0
+info: {title: Text API, version: "1.0"}
+paths:
+  /health:
+    get:
+      operationId: health
+      responses:
+        "200":
+          description: plain text
+          content:
+            text/plain:
+              schema: {type: string}
+`
+	if err := os.WriteFile(specPath, []byte(specYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	spec, err := Parse(specPath)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	ep := findEndpoint(spec.Endpoints, "health")
+	if ep == nil {
+		t.Fatal("health endpoint missing")
+	}
+	if ep.ResponseType != nil && ep.ResponseType.IsBytes() {
+		t.Fatalf("ResponseType = %+v, text/plain must not be bytes", ep.ResponseType)
+	}
+}
+
+func TestParseBinaryResponseV2(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "binary-v2.yaml")
+	specYAML := `swagger: "2.0"
+info: {title: Binary V2 API, version: "1.0"}
+host: api.example.com
+schemes: [https]
+paths:
+  /quotes/{quoteId}/pdf:
+    get:
+      operationId: downloadQuotePdf
+      produces: [application/pdf]
+      parameters:
+        - name: quoteId
+          in: path
+          required: true
+          type: integer
+      responses:
+        "200":
+          description: PDF
+          schema:
+            type: file
+`
+	if err := os.WriteFile(specPath, []byte(specYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	spec, err := Parse(specPath)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	ep := findEndpoint(spec.Endpoints, "downloadQuotePdf")
+	if ep == nil {
+		t.Fatal("downloadQuotePdf endpoint missing")
+	}
+	if ep.ResponseType == nil || !ep.ResponseType.IsBytes() {
+		t.Fatalf("ResponseType = %+v, want PrimBytes", ep.ResponseType)
+	}
+}
+
 func testdataPath(name string) string {
 	// Walk up from internal/parser to project root
 	wd, _ := os.Getwd()

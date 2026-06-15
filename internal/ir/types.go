@@ -63,7 +63,12 @@ const (
 	PrimFloat
 	PrimBool
 	PrimAny
+	PrimBytes
 )
+
+func (t *Type) IsBytes() bool {
+	return t != nil && t.Kind == TypePrimitive && t.Prim == PrimBytes
+}
 
 // Endpoint is a single API operation.
 type Endpoint struct {
