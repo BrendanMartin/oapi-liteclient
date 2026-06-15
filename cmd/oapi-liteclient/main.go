@@ -21,6 +21,7 @@ func main() {
 	out := flag.String("out", "./client", "Output directory")
 	force := flag.Bool("force", false, "Overwrite output directory if it exists")
 	lenient := flag.Bool("lenient", false, "Make all model fields optional (tolerates null values from inaccurate specs)")
+	packageVersion := flag.String("package-version", "0.1.0", "Version for the generated Python pyproject.toml")
 	version := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 
@@ -45,7 +46,7 @@ func main() {
 
 	switch *lang {
 	case "python":
-		opts := generator.PythonOptions{Style: *style, Auth: *auth, Package: filepath.Base(*out), Lenient: *lenient}
+		opts := generator.PythonOptions{Style: *style, Auth: *auth, Package: filepath.Base(*out), PackageVersion: *packageVersion, Lenient: *lenient}
 		files, err = generator.GeneratePython(irSpec, opts)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)

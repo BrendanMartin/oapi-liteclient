@@ -78,6 +78,7 @@ err := client.DeletePet(ctx, 1).Do()
 | `--out` | `./client` | Output directory |
 | `--force` | `false` | Overwrite output directory if it exists |
 | `--lenient` | `false` | Make all model fields optional (tolerates null values from inaccurate specs) |
+| `--package-version` | `0.1.0` | Version written to the generated Python `pyproject.toml` |
 | `--version` | | Print version and exit |
 
 ## Auth Strategies

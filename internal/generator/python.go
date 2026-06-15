@@ -29,10 +29,11 @@ func resolveAuth(explicit string, spec *ir.Spec) string {
 
 // PythonOptions configures the Python code generator.
 type PythonOptions struct {
-	Style   string // "pydantic" (default) or "dataclass"
-	Auth    string // "none", "custom", "bearer-token", "gcp-id-token", "api-key"
-	Package string // package name for pyproject.toml (defaults to output dir name)
-	Lenient bool   // make all model fields Optional (tolerates null from inaccurate specs)
+	Style          string // "pydantic" (default) or "dataclass"
+	Auth           string // "none", "custom", "bearer-token", "gcp-id-token", "api-key"
+	Package        string // package name for pyproject.toml (defaults to output dir name)
+	PackageVersion string // version for pyproject.toml (defaults to "0.1.0")
+	Lenient        bool   // make all model fields Optional (tolerates null from inaccurate specs)
 }
 
 // pythonData is passed to the template.
@@ -114,7 +115,7 @@ func GeneratePython(spec *ir.Spec, opts PythonOptions) (map[string]string, error
 		}
 		files := map[string]string{"client.py": buf.String()}
 		if opts.Package != "" {
-			files["pyproject.toml"] = pyProjectTOML(opts.Package, opts.Style, authMode)
+			files["pyproject.toml"] = pyProjectTOML(opts.Package, opts.PackageVersion, opts.Style, authMode)
 		}
 		return files, nil
 	}
@@ -202,7 +203,7 @@ func GeneratePython(spec *ir.Spec, opts PythonOptions) (map[string]string, error
 	files["__init__.py"] = buf.String()
 
 	if opts.Package != "" {
-		files["pyproject.toml"] = pyProjectTOML(opts.Package, opts.Style, authMode)
+		files["pyproject.toml"] = pyProjectTOML(opts.Package, opts.PackageVersion, opts.Style, authMode)
 	}
 
 	return files, nil
@@ -503,8 +504,11 @@ func fmtPath(path string) string {
 	return string(result)
 }
 
-func pyProjectTOML(pkg, style, authMode string) string {
+func pyProjectTOML(pkg, version, style, authMode string) string {
 	safePkg := strings.ReplaceAll(pkg, "-", "_")
+	if version == "" {
+		version = "0.1.0"
+	}
 	var deps []string
 	deps = append(deps, `    "httpx>=0.27"`)
 	if style != "dataclass" {
@@ -515,7 +519,7 @@ func pyProjectTOML(pkg, style, authMode string) string {
 	}
 	return fmt.Sprintf(`[project]
 name = %q
-version = "0.1.0"
+version = %q
 requires-python = ">=3.10"
 dependencies = [
 %s,
@@ -530,7 +534,7 @@ packages = ["."]
 
 [tool.hatch.build.targets.wheel.sources]
 "." = %q
-`, safePkg, strings.Join(deps, ",\n"), safePkg)
+`, safePkg, version, strings.Join(deps, ",\n"), safePkg)
 }
 
 const pydanticTemplate = `{{- $style := "pydantic" -}}

@@ -245,6 +245,23 @@ func TestGeneratePythonMultipartDataclass(t *testing.T) {
 	}
 }
 
+func TestGeneratePythonPackageVersion(t *testing.T) {
+	spec := &ir.Spec{
+		Title:     "Versioned API",
+		Endpoints: []ir.Endpoint{{OperationID: "ping", Method: "GET", Path: "/ping"}},
+	}
+
+	custom := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic", Auth: "none", Package: "myclient", PackageVersion: "2.3.0"})["pyproject.toml"]
+	if !strings.Contains(custom, `version = "2.3.0"`) {
+		t.Errorf("pyproject.toml should use the supplied version\n%s", custom)
+	}
+
+	def := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic", Auth: "none", Package: "myclient"})["pyproject.toml"]
+	if !strings.Contains(def, `version = "0.1.0"`) {
+		t.Errorf("pyproject.toml should default to 0.1.0 when version is empty\n%s", def)
+	}
+}
+
 func TestGeneratePythonNoAuth(t *testing.T) {
 	spec := &ir.Spec{
 		Title: "No Auth API",
