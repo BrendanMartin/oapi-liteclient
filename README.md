@@ -78,8 +78,43 @@ err := client.DeletePet(ctx, 1).Do()
 | `--out` | `./client` | Output directory |
 | `--force` | `false` | Overwrite output directory if it exists |
 | `--lenient` | `false` | Make all model fields optional (tolerates null values from inaccurate specs) |
+| `--merge <file>` | | Supplemental OpenAPI YAML/JSON fragment to deep-merge into the base spec before parsing. Repeat to apply multiple fragments in order. This is a plain recursive merge (maps merge; scalars and arrays replace), **not** OpenAPI Overlay 1.0 — do not pass `overlay:`/`actions:` documents. |
 | `--package-version` | `0.1.0` | Version written to the generated Python `pyproject.toml` |
 | `--version` | | Print version and exit |
+
+### Supplemental Spec Merge
+
+Use `--merge` when the upstream OpenAPI spec omits endpoints or needs small local patches. Fragments are YAML or JSON using the same OpenAPI shape as the base spec. The merge is recursive and fragment-wins: maps are merged, while scalars and arrays replace the base value. Repeat `--merge` to apply fragments in order.
+
+This is intentionally **not** OpenAPI Overlay 1.0 (`overlay:`/`actions:`/JSONPath). It is a plain structural merge of spec-shaped fragments, which is simpler for the common case of adding a missing endpoint. Because arrays replace wholesale, prefer fragments that add *new* paths/operations rather than patching an operation that already declares `parameters`/`tags`/`security` (you would have to restate the whole array).
+
+```bash
+oapi-liteclient --spec upstream.yaml --merge fulcrum-extra.yaml --out ./fulcrum_client
+```
+
+Example fragment for a PDF endpoint:
+
+```yaml
+paths:
+  /api/v2/quotes/{quoteId}/pdf:
+    get:
+      operationId: downloadQuotePdf
+      tags: [Quote]
+      parameters:
+        - name: quoteId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Quote PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+```
 
 ## Auth Strategies
 
@@ -123,6 +158,7 @@ For a typical 3-5 endpoint API, the output is a single file (~100-200 lines). Fo
 
 - OpenAPI 3.0 and 3.1
 - JSON request/response bodies, including JSON-Patch (`application/json-patch+json`) — the request body's media type is sent as the `Content-Type`
+- A 2xx response body whose schema is `type: string, format: binary` (or Swagger 2 `type: file`) generates as `bytes` in Python and `[]byte` in Go. JSON responses take precedence when an operation offers both. Non-binary, non-JSON bodies (e.g. `text/plain`) are not decoded — the method returns no body, as before.
 - `multipart/form-data` uploads — binary fields become file parts, other fields are sent as form values under their original (possibly dotted) keys; a container prefix common to all keys is stripped from parameter names
 - Path and query parameters
 - `$ref` to component schemas
