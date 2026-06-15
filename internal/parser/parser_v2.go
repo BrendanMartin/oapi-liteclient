@@ -38,15 +38,11 @@ func buildIRFromV2(model *libopenapi.DocumentModel[v2.Swagger]) *ir.Spec {
 		}
 	}
 
-	seenOps := make(map[string]bool)
+	opIndex := make(map[string]int) // operationId -> index into spec.Endpoints
 	if model.Model.Paths != nil && model.Model.Paths.PathItems != nil {
 		for path, pathItem := range model.Model.Paths.PathItems.FromOldest() {
 			for _, ep := range buildEndpointsV2(path, pathItem, model.Model.Consumes, model.Model.Produces) {
-				if seenOps[ep.OperationID] {
-					continue
-				}
-				seenOps[ep.OperationID] = true
-				spec.Endpoints = append(spec.Endpoints, ep)
+				spec.Endpoints = dedupeEndpoint(spec.Endpoints, opIndex, ep)
 			}
 		}
 	}
@@ -82,15 +78,21 @@ func extractAuthV2(model *libopenapi.DocumentModel[v2.Swagger]) *ir.Auth {
 func buildEndpointsV2(path string, pathItem *v2.PathItem, globalConsumes, globalProduces []string) []ir.Endpoint {
 	var endpoints []ir.Endpoint
 
-	ops := map[string]*v2.Operation{
-		"GET":    pathItem.Get,
-		"POST":   pathItem.Post,
-		"PUT":    pathItem.Put,
-		"DELETE": pathItem.Delete,
-		"PATCH":  pathItem.Patch,
+	// Fixed method order so endpoint output is deterministic (a map would
+	// iterate in random order, reordering methods between regenerations).
+	ops := []struct {
+		method string
+		op     *v2.Operation
+	}{
+		{"GET", pathItem.Get},
+		{"POST", pathItem.Post},
+		{"PUT", pathItem.Put},
+		{"DELETE", pathItem.Delete},
+		{"PATCH", pathItem.Patch},
 	}
 
-	for method, op := range ops {
+	for _, mo := range ops {
+		method, op := mo.method, mo.op
 		if op == nil {
 			continue
 		}

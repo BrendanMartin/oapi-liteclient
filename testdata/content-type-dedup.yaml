@@ -1,0 +1,98 @@
+openapi: 3.0.1
+info:
+  title: ContentTypeDedup
+  version: "1.0"
+servers:
+  - url: https://api.example.com
+paths:
+  # Normal JSON write: content map lists the wildcard first (as Go's json.Marshal
+  # sorts keys after a --merge), to prove selection ignores map order.
+  /api/items:
+    post:
+      operationId: CreateItem
+      requestBody:
+        content:
+          application/*+json:
+            schema:
+              $ref: '#/components/schemas/Item'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Item'
+          application/json-patch+json:
+            schema:
+              $ref: '#/components/schemas/Item'
+          text/json:
+            schema:
+              $ref: '#/components/schemas/Item'
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+  # JSON Patch: only json-patch+json is offered, so it must be kept.
+  /api/items/{id}:
+    patch:
+      operationId: PatchItem
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json-patch+json:
+            schema:
+              type: array
+              items:
+                type: object
+      responses:
+        "204":
+          description: no content
+  # Duplicate operationId across two paths: the kebab-case form must win and the
+  # choice must be stable regardless of which path appears first.
+  /api/items/{id}/customFields:
+    put:
+      operationId: UpdateItemCustomFields
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Item'
+      responses:
+        "204":
+          description: no content
+  /api/items/{id}/custom-fields:
+    put:
+      operationId: UpdateItemCustomFields
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Item'
+      responses:
+        "204":
+          description: no content
+components:
+  schemas:
+    Item:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string

@@ -430,85 +430,117 @@ func TestParseMultipart(t *testing.T) {
 	}
 }
 
+// mergeYAML decodes two spec strings, deep-merges them, and re-encodes — the
+// same round-trip Parse runs for --merge. Returns the merged YAML.
+func mergeYAML(t *testing.T, base, fragment string) string {
+	t.Helper()
+	baseDoc, err := decodeSpec([]byte(base))
+	if err != nil {
+		t.Fatalf("decodeSpec base: %v", err)
+	}
+	fragDoc, err := decodeSpec([]byte(fragment))
+	if err != nil {
+		t.Fatalf("decodeSpec fragment: %v", err)
+	}
+	out, err := encodeSpec(deepMerge(baseDoc, fragDoc))
+	if err != nil {
+		t.Fatalf("encodeSpec: %v", err)
+	}
+	return string(out)
+}
+
 func TestDeepMerge(t *testing.T) {
-	base := map[string]any{
-		"openapi": "3.0.0",
-		"paths": map[string]any{
-			"/pets": map[string]any{
-				"get": map[string]any{
-					"summary":    "List pets",
-					"parameters": []any{"base-param"},
-				},
-			},
-		},
-		"components": map[string]any{
-			"schemas": map[string]any{
-				"Pet": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"id": map[string]any{"type": "integer"},
-					},
-				},
-			},
-		},
-	}
-	fragment := map[string]any{
-		"paths": map[string]any{
-			"/pets": map[string]any{
-				"get": map[string]any{
-					"summary":    "Fragment list pets",
-					"parameters": []any{"fragment-param"},
-				},
-			},
-			"/quotes/{quoteId}/pdf": map[string]any{
-				"get": map[string]any{"operationId": "downloadQuotePdf"},
-			},
-		},
-		"components": map[string]any{
-			"schemas": map[string]any{
-				"Pet": map[string]any{
-					"properties": map[string]any{
-						"name": map[string]any{"type": "string"},
-					},
-				},
-				"Quote": map[string]any{"type": "object"},
-			},
-		},
-	}
+	base := `openapi: 3.0.0
+paths:
+  /pets:
+    get:
+      summary: List pets
+      parameters: [base-param]
+components:
+  schemas:
+    Pet:
+      type: object
+      properties:
+        id:
+          type: integer
+`
+	fragment := `paths:
+  /pets:
+    get:
+      summary: Fragment list pets
+      parameters: [fragment-param]
+  /quotes/{quoteId}/pdf:
+    get:
+      operationId: downloadQuotePdf
+components:
+  schemas:
+    Pet:
+      properties:
+        name:
+          type: string
+    Quote:
+      type: object
+`
+	got := mergeYAML(t, base, fragment)
 
-	got := deepMerge(base, fragment)
-
-	paths := got["paths"].(map[string]any)
-	petGet := paths["/pets"].(map[string]any)["get"].(map[string]any)
-	if petGet["summary"] != "Fragment list pets" {
-		t.Fatalf("summary = %v, want fragment value", petGet["summary"])
+	for _, want := range []string{
+		"summary: Fragment list pets", // fragment scalar wins
+		"fragment-param",              // fragment array replaces base array
+		"/quotes/{quoteId}/pdf",       // new fragment path added
+		"id:",                         // base nested property preserved
+		"name:",                       // fragment nested property added
+		"Quote:",                      // fragment schema added
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("merged spec missing %q:\n%s", want, got)
+		}
 	}
-	params := petGet["parameters"].([]any)
-	if len(params) != 1 || params[0] != "fragment-param" {
-		t.Fatalf("parameters = %#v, want fragment array replacement", params)
-	}
-	if _, ok := paths["/quotes/{quoteId}/pdf"]; !ok {
-		t.Fatal("new fragment path was not added")
-	}
-	schemas := got["components"].(map[string]any)["schemas"].(map[string]any)
-	petProps := schemas["Pet"].(map[string]any)["properties"].(map[string]any)
-	if _, ok := petProps["id"]; !ok {
-		t.Fatal("base nested property id was not preserved")
-	}
-	if _, ok := petProps["name"]; !ok {
-		t.Fatal("fragment nested property name was not added")
-	}
-	if _, ok := schemas["Quote"]; !ok {
-		t.Fatal("fragment schema Quote was not added")
+	if strings.Contains(got, "base-param") {
+		t.Errorf("base array should have been replaced:\n%s", got)
 	}
 }
 
 func TestDeepMergeTypeMismatchReplaces(t *testing.T) {
-	base := map[string]any{"x": map[string]any{"nested": true}}
-	fragment := map[string]any{"x": "replacement"}
-	got := deepMerge(base, fragment)
-	if got["x"] != "replacement" {
-		t.Fatalf("x = %#v, want replacement", got["x"])
+	got := mergeYAML(t, "x:\n  nested: true\n", "x: replacement\n")
+	if !strings.Contains(got, "x: replacement") {
+		t.Fatalf("x not replaced:\n%s", got)
+	}
+	if strings.Contains(got, "nested") {
+		t.Fatalf("base map should have been replaced by scalar:\n%s", got)
+	}
+}
+
+// TestDeepMergePreservesOrder guards the determinism fix: the merge must emit
+// keys in the base document's order regardless of Go map iteration, so two
+// regenerations produce identical output.
+func TestDeepMergePreservesOrder(t *testing.T) {
+	base := `openapi: 3.0.0
+paths:
+  /zebra:
+    get: {operationId: getZebra}
+  /apple:
+    get: {operationId: getApple}
+  /mango:
+    get: {operationId: getMango}
+`
+	fragment := `paths:
+  /banana:
+    get: {operationId: getBanana}
+`
+	const runs = 5
+	first := mergeYAML(t, base, fragment)
+	for i := 1; i < runs; i++ {
+		if got := mergeYAML(t, base, fragment); got != first {
+			t.Fatalf("merge not deterministic across runs:\nrun 0:\n%s\nrun %d:\n%s", first, i, got)
+		}
+	}
+	// Base order kept (zebra, apple, mango), fragment path appended last.
+	zi := strings.Index(first, "/zebra")
+	ai := strings.Index(first, "/apple")
+	mi := strings.Index(first, "/mango")
+	bi := strings.Index(first, "/banana")
+	if zi >= ai || ai >= mi || mi >= bi {
+		t.Fatalf("paths not in base-then-fragment order:\n%s", first)
 	}
 }
 
@@ -517,19 +549,12 @@ func TestDecodeEncodeSpecRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decodeSpec: %v", err)
 	}
-	if doc["openapi"] != "3.0.0" {
-		t.Fatalf("openapi = %v, want 3.0.0", doc["openapi"])
-	}
 	encoded, err := encodeSpec(doc)
 	if err != nil {
 		t.Fatalf("encodeSpec: %v", err)
 	}
-	decoded, err := decodeSpec(encoded)
-	if err != nil {
-		t.Fatalf("decodeSpec(encoded): %v", err)
-	}
-	if decoded["openapi"] != "3.0.0" {
-		t.Fatalf("round-trip openapi = %v, want 3.0.0", decoded["openapi"])
+	if !strings.Contains(string(encoded), "openapi: 3.0.0") {
+		t.Fatalf("round-trip lost openapi version:\n%s", encoded)
 	}
 }
 
@@ -920,4 +945,108 @@ func findParam(params []ir.Param, name string) *ir.Param {
 		}
 	}
 	return nil
+}
+
+func TestJSONRequestTypeRank(t *testing.T) {
+	tests := []struct {
+		mt   string
+		want int
+	}{
+		{"application/json", 2},
+		{"application/json-patch+json", 1},
+		{"application/merge-patch+json", 1},
+		{"application/*+json", -1}, // wildcard: servers 415 it
+		{"text/json", -1},
+		{"application/xml", -1},
+		{"multipart/form-data", -1},
+	}
+	for _, tt := range tests {
+		if got := jsonRequestTypeRank(tt.mt); got != tt.want {
+			t.Errorf("jsonRequestTypeRank(%q) = %d, want %d", tt.mt, got, tt.want)
+		}
+	}
+}
+
+func TestBestJSONRequestType(t *testing.T) {
+	// The fulcrum content map, in any order, must resolve to concrete
+	// application/json — never the wildcard.
+	orders := [][]string{
+		{"application/json-patch+json", "application/json", "text/json", "application/*+json"},
+		{"application/*+json", "application/json-patch+json", "text/json", "application/json"},
+		{"text/json", "application/*+json"}, // no concrete application/json present
+	}
+	wants := []string{"application/json", "application/json", ""}
+	for i, order := range orders {
+		if got := bestJSONRequestType(order); got != wants[i] {
+			t.Errorf("bestJSONRequestType(%v) = %q, want %q", order, got, wants[i])
+		}
+	}
+
+	// Patch operations offer only the concrete patch subtype, which is kept.
+	if got := bestJSONRequestType([]string{"application/json-patch+json"}); got != "application/json-patch+json" {
+		t.Errorf("patch-only = %q, want application/json-patch+json", got)
+	}
+}
+
+func TestDedupeEndpointPrefersKebabPath(t *testing.T) {
+	opIndex := make(map[string]int)
+	var eps []ir.Endpoint
+	camel := ir.Endpoint{OperationID: "UpdateItemCustomFields", Path: "/api/items/{id}/customFields"}
+	kebab := ir.Endpoint{OperationID: "UpdateItemCustomFields", Path: "/api/items/{id}/custom-fields"}
+
+	// camelCase seen first, kebab second.
+	eps = dedupeEndpoint(eps, opIndex, camel)
+	eps = dedupeEndpoint(eps, opIndex, kebab)
+	if len(eps) != 1 {
+		t.Fatalf("len = %d, want 1 (deduped)", len(eps))
+	}
+	if eps[0].Path != kebab.Path {
+		t.Errorf("kept %q, want kebab %q", eps[0].Path, kebab.Path)
+	}
+
+	// Reverse arrival order: same kebab winner (order-independent).
+	opIndex = make(map[string]int)
+	eps = nil
+	eps = dedupeEndpoint(eps, opIndex, kebab)
+	eps = dedupeEndpoint(eps, opIndex, camel)
+	if len(eps) != 1 || eps[0].Path != kebab.Path {
+		t.Errorf("reverse order kept %v, want single kebab %q", eps, kebab.Path)
+	}
+}
+
+func TestParseContentTypeDedup(t *testing.T) {
+	spec, err := Parse(testdataPath("content-type-dedup.yaml"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	create := findEndpoint(spec.Endpoints, "CreateItem")
+	if create == nil {
+		t.Fatal("CreateItem not found")
+	}
+	if create.RequestCType != "application/json" {
+		t.Errorf("CreateItem.RequestCType = %q, want application/json", create.RequestCType)
+	}
+
+	patch := findEndpoint(spec.Endpoints, "PatchItem")
+	if patch == nil {
+		t.Fatal("PatchItem not found")
+	}
+	if patch.RequestCType != "application/json-patch+json" {
+		t.Errorf("PatchItem.RequestCType = %q, want application/json-patch+json", patch.RequestCType)
+	}
+
+	// Duplicate operationId collapses to the single kebab-case path.
+	var customFieldsEps []ir.Endpoint
+	for _, ep := range spec.Endpoints {
+		if ep.OperationID == "UpdateItemCustomFields" {
+			customFieldsEps = append(customFieldsEps, ep)
+		}
+	}
+	if len(customFieldsEps) != 1 {
+		t.Fatalf("UpdateItemCustomFields appears %d times, want 1", len(customFieldsEps))
+	}
+	if customFieldsEps[0].Path != "/api/items/{id}/custom-fields" {
+		t.Errorf("UpdateItemCustomFields path = %q, want kebab-case", customFieldsEps[0].Path)
+	}
 }

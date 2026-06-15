@@ -106,16 +106,16 @@ func buildIR(model *libopenapi.DocumentModel[v3.Document]) *ir.Spec {
 		}
 	}
 
-	// Endpoints from paths (deduplicate by operationId)
-	seenOps := make(map[string]bool)
+	// Endpoints from paths. Two paths can share one operationId (e.g.
+	// /custom-fields and /customFields); dedupe deterministically by keeping the
+	// lexicographically smallest path so regeneration is stable regardless of
+	// map order — the kebab-case form wins, as its '-' sorts before the
+	// camelCase capital.
+	opIndex := make(map[string]int) // operationId -> index into spec.Endpoints
 	if model.Model.Paths != nil && model.Model.Paths.PathItems != nil {
 		for path, pathItem := range model.Model.Paths.PathItems.FromOldest() {
 			for _, ep := range buildEndpoints(path, pathItem) {
-				if seenOps[ep.OperationID] {
-					continue
-				}
-				seenOps[ep.OperationID] = true
-				spec.Endpoints = append(spec.Endpoints, ep)
+				spec.Endpoints = dedupeEndpoint(spec.Endpoints, opIndex, ep)
 			}
 		}
 	}
@@ -323,15 +323,21 @@ func schemaToType(proxy *base.SchemaProxy) ir.Type {
 func buildEndpoints(path string, pathItem *v3.PathItem) []ir.Endpoint {
 	var endpoints []ir.Endpoint
 
-	ops := map[string]*v3.Operation{
-		"GET":    pathItem.Get,
-		"POST":   pathItem.Post,
-		"PUT":    pathItem.Put,
-		"DELETE": pathItem.Delete,
-		"PATCH":  pathItem.Patch,
+	// Fixed method order so endpoint output is deterministic (a map would
+	// iterate in random order, reordering methods between regenerations).
+	ops := []struct {
+		method string
+		op     *v3.Operation
+	}{
+		{"GET", pathItem.Get},
+		{"POST", pathItem.Post},
+		{"PUT", pathItem.Put},
+		{"DELETE", pathItem.Delete},
+		{"PATCH", pathItem.Patch},
 	}
 
-	for method, op := range ops {
+	for _, mo := range ops {
+		method, op := mo.method, mo.op
 		if op == nil {
 			continue
 		}
@@ -364,15 +370,27 @@ func buildEndpoints(path string, pathItem *v3.PathItem) []ir.Endpoint {
 			ep.Params = append(ep.Params, p)
 		}
 
-		// Request body: prefer a JSON media type; otherwise fall back to
-		// multipart/form-data, modeled as flattened form fields.
+		// Request body: prefer a concrete JSON media type (never the
+		// application/*+json wildcard or text/json — servers bind concrete
+		// types and 415 those); otherwise fall back to multipart/form-data,
+		// modeled as flattened form fields.
 		if op.RequestBody != nil && op.RequestBody.Content != nil {
+			bestRank, bestType := -1, ""
 			for mediaType, content := range op.RequestBody.Content.FromOldest() {
-				if isJSONMediaType(mediaType) && content.Schema != nil {
+				if content.Schema == nil {
+					continue
+				}
+				rank := jsonRequestTypeRank(mediaType)
+				if rank < 0 {
+					continue
+				}
+				// Higher rank wins; ties broken lexicographically so the
+				// choice is independent of content-map order.
+				if rank > bestRank || (rank == bestRank && mediaType < bestType) {
+					bestRank, bestType = rank, mediaType
 					t := schemaToType(content.Schema)
 					ep.RequestBody = &t
 					ep.RequestCType = mediaType
-					break
 				}
 			}
 			if ep.RequestBody == nil {
@@ -464,24 +482,77 @@ func deriveOperationID(method, path string) string {
 }
 
 // consumesContentType picks the request media type for a Swagger 2.0 body
-// parameter from the operation-level then global "consumes" lists, preferring
-// the first JSON media type and defaulting to application/json.
+// parameter from the operation-level "consumes" list (which overrides global),
+// preferring a concrete JSON type and defaulting to application/json.
 func consumesContentType(opConsumes, globalConsumes []string) string {
 	for _, list := range [][]string{opConsumes, globalConsumes} {
-		for _, mt := range list {
-			if isJSONMediaType(mt) {
-				return mt
-			}
+		if mt := bestJSONRequestType(list); mt != "" {
+			return mt
 		}
 	}
 	return "application/json"
 }
 
-// isJSONMediaType returns true for media types that carry JSON content.
+// bestJSONRequestType returns the highest-ranked concrete JSON media type from
+// the list (see jsonRequestTypeRank), or "" if none qualifies.
+func bestJSONRequestType(types []string) string {
+	bestRank, bestType := -1, ""
+	for _, mt := range types {
+		rank := jsonRequestTypeRank(mt)
+		if rank < 0 {
+			continue
+		}
+		if rank > bestRank || (rank == bestRank && mt < bestType) {
+			bestRank, bestType = rank, mt
+		}
+	}
+	return bestType
+}
+
+// jsonRequestTypeRank scores a media type for use as a request Content-Type.
+// Higher wins. Concrete application/json is preferred over other concrete JSON
+// subtypes (e.g. application/json-patch+json); the application/*+json wildcard
+// and text/json are rejected (rank -1) because servers bind concrete media
+// types and reject those. Non-JSON types also score -1.
+func jsonRequestTypeRank(mt string) int {
+	switch {
+	case mt == "application/json":
+		return 2
+	case strings.ContainsRune(mt, '*'), mt == "text/json":
+		return -1
+	case strings.HasSuffix(mt, "+json"):
+		return 1
+	default:
+		return -1
+	}
+}
+
+// isJSONMediaType returns true for media types that carry JSON content. Used
+// for response parsing, where text/json and +json subtypes are valid JSON.
 func isJSONMediaType(mt string) bool {
 	return mt == "application/json" ||
 		mt == "text/json" ||
 		strings.HasSuffix(mt, "+json")
+}
+
+// dedupeEndpoint adds ep to endpoints unless its operationId already appears.
+// On collision it keeps the endpoint with the lexicographically smallest path
+// (deterministic regardless of map order) and warns to stderr. opIndex maps
+// operationId to the endpoint's index in the slice.
+func dedupeEndpoint(endpoints []ir.Endpoint, opIndex map[string]int, ep ir.Endpoint) []ir.Endpoint {
+	if i, ok := opIndex[ep.OperationID]; ok {
+		prev := endpoints[i]
+		kept, dropped := prev, ep
+		if ep.Path < prev.Path {
+			kept, dropped = ep, prev
+			endpoints[i] = ep
+		}
+		fmt.Fprintf(os.Stderr, "warning: operationId %q maps to multiple paths; keeping %q, dropping %q\n",
+			ep.OperationID, kept.Path, dropped.Path)
+		return endpoints
+	}
+	opIndex[ep.OperationID] = len(endpoints)
+	return append(endpoints, ep)
 }
 
 func isObjectSchema(schema *base.Schema) bool {
