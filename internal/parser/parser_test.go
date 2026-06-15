@@ -3,6 +3,7 @@ package parser
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/brendanmartin/oapi-liteclient/internal/ir"
@@ -529,6 +530,128 @@ func TestDecodeEncodeSpecRoundTrip(t *testing.T) {
 	}
 	if decoded["openapi"] != "3.0.0" {
 		t.Fatalf("round-trip openapi = %v, want 3.0.0", decoded["openapi"])
+	}
+}
+
+func TestParseWithMergeAddsEndpointAndSchema(t *testing.T) {
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "base.yaml")
+	fragmentPath := filepath.Join(dir, "fragment.yaml")
+
+	base := `openapi: 3.0.0
+info:
+  title: Merge API
+  version: "1.0"
+servers:
+  - url: https://api.example.com
+paths:
+  /quotes/{quoteId}:
+    get:
+      operationId: getQuote
+      tags: [Quote]
+      parameters:
+        - name: quoteId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Quote"
+components:
+  schemas:
+    Quote:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: integer
+`
+	fragment := `paths:
+  /quotes/{quoteId}/pdf:
+    get:
+      operationId: downloadQuotePdf
+      tags: [Quote]
+      parameters:
+        - name: quoteId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+components:
+  schemas:
+    Quote:
+      properties:
+        status:
+          type: string
+`
+	if err := os.WriteFile(basePath, []byte(base), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fragmentPath, []byte(fragment), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	spec, err := Parse(basePath, fragmentPath)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	if findEndpoint(spec.Endpoints, "getQuote") == nil {
+		t.Fatal("base endpoint getQuote missing after merge")
+	}
+	pdf := findEndpoint(spec.Endpoints, "downloadQuotePdf")
+	if pdf == nil {
+		t.Fatal("fragment endpoint downloadQuotePdf missing")
+	}
+	if len(pdf.Params) != 1 || pdf.Params[0].Name != "quoteId" || pdf.Params[0].Type.Prim != ir.PrimInt {
+		t.Fatalf("pdf params = %+v, want quoteId int", pdf.Params)
+	}
+	quote := findModel(spec.Models, "Quote")
+	if quote == nil {
+		t.Fatal("Quote model missing")
+	}
+	if findField(quote.Fields, "id") == nil {
+		t.Fatal("base Quote.id field missing after merge")
+	}
+	if findField(quote.Fields, "status") == nil {
+		t.Fatal("fragment Quote.status field missing")
+	}
+}
+
+func TestParseMalformedFragmentIncludesPath(t *testing.T) {
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "base.yaml")
+	fragmentPath := filepath.Join(dir, "bad.yaml")
+	base := `openapi: 3.0.0
+info: {title: Bad Fragment API, version: "1.0"}
+paths: {}
+`
+	if err := os.WriteFile(basePath, []byte(base), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fragmentPath, []byte("paths: ["), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Parse(basePath, fragmentPath)
+	if err == nil {
+		t.Fatal("Parse succeeded, want malformed fragment error")
+	}
+	if !strings.Contains(err.Error(), "merge "+fragmentPath+":") {
+		t.Fatalf("error = %q, want merge path prefix", err.Error())
 	}
 }
 

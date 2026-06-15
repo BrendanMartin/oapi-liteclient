@@ -13,6 +13,17 @@ import (
 	"github.com/brendanmartin/oapi-liteclient/internal/parser"
 )
 
+type mergeFlags []string
+
+func (m *mergeFlags) String() string {
+	return strings.Join(*m, ",")
+}
+
+func (m *mergeFlags) Set(value string) error {
+	*m = append(*m, value)
+	return nil
+}
+
 func main() {
 	spec := flag.String("spec", "", "Path or URL to OpenAPI spec (YAML or JSON)")
 	lang := flag.String("lang", "python", "Target language (python, go)")
@@ -23,6 +34,8 @@ func main() {
 	lenient := flag.Bool("lenient", false, "Make all model fields optional (tolerates null values from inaccurate specs)")
 	packageVersion := flag.String("package-version", "0.1.0", "Version for the generated Python pyproject.toml")
 	version := flag.Bool("version", false, "Print version and exit")
+	var merges mergeFlags
+	flag.Var(&merges, "merge", "Supplemental OpenAPI fragment (YAML/JSON) to deep-merge into the base spec before parsing; repeatable. Plain recursive merge, not OpenAPI Overlay 1.0.")
 	flag.Parse()
 
 	if *version {
@@ -36,7 +49,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	irSpec, err := parser.Parse(*spec)
+	irSpec, err := parser.Parse(*spec, merges...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)

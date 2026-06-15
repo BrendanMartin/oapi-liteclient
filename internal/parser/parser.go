@@ -13,11 +13,33 @@ import (
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
 )
 
-// Parse reads an OpenAPI spec (v2 or v3) from a file path or URL and returns the IR.
-func Parse(specPath string) (*ir.Spec, error) {
+// Parse reads an OpenAPI spec (v2 or v3) from a file path or URL, deep-merges
+// any supplemental fragments, and returns the IR.
+func Parse(specPath string, mergePaths ...string) (*ir.Spec, error) {
 	data, err := loadSpec(specPath)
 	if err != nil {
 		return nil, fmt.Errorf("loading spec: %w", err)
+	}
+	if len(mergePaths) > 0 {
+		doc, err := decodeSpec(data)
+		if err != nil {
+			return nil, err
+		}
+		for _, mergePath := range mergePaths {
+			fragData, err := loadSpec(mergePath)
+			if err != nil {
+				return nil, fmt.Errorf("merge %s: %w", mergePath, err)
+			}
+			fragDoc, err := decodeSpec(fragData)
+			if err != nil {
+				return nil, fmt.Errorf("merge %s: %w", mergePath, err)
+			}
+			doc = deepMerge(doc, fragDoc)
+		}
+		data, err = encodeSpec(doc)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	doc, err := libopenapi.NewDocument(data)
