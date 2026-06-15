@@ -429,6 +429,109 @@ func TestParseMultipart(t *testing.T) {
 	}
 }
 
+func TestDeepMerge(t *testing.T) {
+	base := map[string]any{
+		"openapi": "3.0.0",
+		"paths": map[string]any{
+			"/pets": map[string]any{
+				"get": map[string]any{
+					"summary":    "List pets",
+					"parameters": []any{"base-param"},
+				},
+			},
+		},
+		"components": map[string]any{
+			"schemas": map[string]any{
+				"Pet": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"id": map[string]any{"type": "integer"},
+					},
+				},
+			},
+		},
+	}
+	fragment := map[string]any{
+		"paths": map[string]any{
+			"/pets": map[string]any{
+				"get": map[string]any{
+					"summary":    "Fragment list pets",
+					"parameters": []any{"fragment-param"},
+				},
+			},
+			"/quotes/{quoteId}/pdf": map[string]any{
+				"get": map[string]any{"operationId": "downloadQuotePdf"},
+			},
+		},
+		"components": map[string]any{
+			"schemas": map[string]any{
+				"Pet": map[string]any{
+					"properties": map[string]any{
+						"name": map[string]any{"type": "string"},
+					},
+				},
+				"Quote": map[string]any{"type": "object"},
+			},
+		},
+	}
+
+	got := deepMerge(base, fragment)
+
+	paths := got["paths"].(map[string]any)
+	petGet := paths["/pets"].(map[string]any)["get"].(map[string]any)
+	if petGet["summary"] != "Fragment list pets" {
+		t.Fatalf("summary = %v, want fragment value", petGet["summary"])
+	}
+	params := petGet["parameters"].([]any)
+	if len(params) != 1 || params[0] != "fragment-param" {
+		t.Fatalf("parameters = %#v, want fragment array replacement", params)
+	}
+	if _, ok := paths["/quotes/{quoteId}/pdf"]; !ok {
+		t.Fatal("new fragment path was not added")
+	}
+	schemas := got["components"].(map[string]any)["schemas"].(map[string]any)
+	petProps := schemas["Pet"].(map[string]any)["properties"].(map[string]any)
+	if _, ok := petProps["id"]; !ok {
+		t.Fatal("base nested property id was not preserved")
+	}
+	if _, ok := petProps["name"]; !ok {
+		t.Fatal("fragment nested property name was not added")
+	}
+	if _, ok := schemas["Quote"]; !ok {
+		t.Fatal("fragment schema Quote was not added")
+	}
+}
+
+func TestDeepMergeTypeMismatchReplaces(t *testing.T) {
+	base := map[string]any{"x": map[string]any{"nested": true}}
+	fragment := map[string]any{"x": "replacement"}
+	got := deepMerge(base, fragment)
+	if got["x"] != "replacement" {
+		t.Fatalf("x = %#v, want replacement", got["x"])
+	}
+}
+
+func TestDecodeEncodeSpecRoundTrip(t *testing.T) {
+	doc, err := decodeSpec([]byte("openapi: 3.0.0\npaths: {}\n"))
+	if err != nil {
+		t.Fatalf("decodeSpec: %v", err)
+	}
+	if doc["openapi"] != "3.0.0" {
+		t.Fatalf("openapi = %v, want 3.0.0", doc["openapi"])
+	}
+	encoded, err := encodeSpec(doc)
+	if err != nil {
+		t.Fatalf("encodeSpec: %v", err)
+	}
+	decoded, err := decodeSpec(encoded)
+	if err != nil {
+		t.Fatalf("decodeSpec(encoded): %v", err)
+	}
+	if decoded["openapi"] != "3.0.0" {
+		t.Fatalf("round-trip openapi = %v, want 3.0.0", decoded["openapi"])
+	}
+}
+
 func testdataPath(name string) string {
 	// Walk up from internal/parser to project root
 	wd, _ := os.Getwd()
