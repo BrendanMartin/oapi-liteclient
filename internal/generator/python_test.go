@@ -78,12 +78,101 @@ func TestPyType(t *testing.T) {
 		{ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}}, "list[str]"},
 		{ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypeRef, Ref: "Pet"}}, "list[Pet]"},
 		{ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimAny}, "Any"},
+		{ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimBytes}, "bytes"},
 	}
 	for _, tt := range tests {
 		got := pyType(tt.in)
 		if got != tt.want {
 			t.Errorf("pyType(%+v) = %q, want %q", tt.in, got, tt.want)
 		}
+	}
+}
+
+func TestGeneratePythonBytesResponse(t *testing.T) {
+	spec := &ir.Spec{
+		Title:   "Binary API",
+		BaseURL: "https://api.example.com",
+		Endpoints: []ir.Endpoint{
+			{
+				OperationID:  "downloadQuotePdf",
+				Method:       "GET",
+				Path:         "/quotes/{quoteId}/pdf",
+				Params:       []ir.Param{{Name: "quoteId", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}},
+				ResponseType: &ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimBytes},
+			},
+		},
+	}
+
+	output := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic", Auth: "none"})["client.py"]
+
+	checks := []string{
+		"def download_quote_pdf(",
+		"quote_id: int",
+		") -> bytes:",
+		"return resp.content",
+	}
+	for _, check := range checks {
+		if !strings.Contains(output, check) {
+			t.Errorf("output missing %q\n\nFull output:\n%s", check, output)
+		}
+	}
+	if strings.Contains(output, "resp.json()") {
+		t.Errorf("bytes endpoint should not call resp.json()\n\nFull output:\n%s", output)
+	}
+}
+
+func TestGeneratePythonBytesResponseTagSplit(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Tagged Binary API",
+		Endpoints: []ir.Endpoint{
+			{
+				OperationID:  "downloadQuotePdf",
+				Method:       "GET",
+				Path:         "/quotes/{quoteId}/pdf",
+				Tags:         []string{"Quote"},
+				Params:       []ir.Param{{Name: "quoteId", In: "path", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}, Required: true}},
+				ResponseType: &ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimBytes},
+			},
+		},
+	}
+
+	files := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic", Auth: "none"})
+	quote := files["quote.py"]
+	if !strings.Contains(quote, ") -> bytes:") {
+		t.Errorf("tag client should type bytes response\n\nFull output:\n%s", quote)
+	}
+	if !strings.Contains(quote, "return resp.content") {
+		t.Errorf("tag client should return resp.content\n\nFull output:\n%s", quote)
+	}
+}
+
+func TestPyReturnRenderingUnchangedAcrossTemplates(t *testing.T) {
+	cases := []struct {
+		name string
+		rt   ir.Type
+		want string
+	}{
+		{name: "ref", rt: ir.Type{Kind: ir.TypeRef, Ref: "Quote"}, want: "return Quote.model_validate(resp.json())"},
+		{name: "array_ref", rt: ir.Type{Kind: ir.TypeArray, Elem: &ir.Type{Kind: ir.TypeRef, Ref: "Quote"}}, want: "return [Quote.model_validate(item) for item in resp.json()]"},
+		{name: "map", rt: ir.Type{Kind: ir.TypeMap, Elem: &ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}}, want: "return resp.json()"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := &ir.Spec{
+				Title:  "Ret API",
+				Models: []ir.Model{{Name: "Quote", Fields: []ir.Field{{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimInt}}}}},
+				Endpoints: []ir.Endpoint{{
+					OperationID:  "getThing",
+					Method:       "GET",
+					Path:         "/thing",
+					ResponseType: &tc.rt,
+				}},
+			}
+			out := mustGeneratePython(t, spec, PythonOptions{Style: "pydantic", Auth: "none"})["client.py"]
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("output missing %q\n%s", tc.want, out)
+			}
+		})
 	}
 }
 

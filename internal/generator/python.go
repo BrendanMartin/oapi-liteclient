@@ -78,6 +78,7 @@ var funcMap = template.FuncMap{
 	"requiredQueryParams":        requiredQueryParams,
 	"optionalQueryParams":        optionalQueryParams,
 	"fmtPath":                    fmtPath,
+	"pyReturnStmt":               pyReturnStmt,
 }
 
 var pydanticTmpl = template.Must(template.New("pydantic").Funcs(funcMap).Parse(pydanticTemplate))
@@ -224,6 +225,8 @@ func pyType(t ir.Type) string {
 			return "bool"
 		case ir.PrimAny:
 			return "Any"
+		case ir.PrimBytes:
+			return "bytes"
 		}
 	case ir.TypeArray:
 		if t.Elem != nil {
@@ -362,6 +365,9 @@ func pyReturnStmt(ep ir.Endpoint, style string) string {
 	rt := ep.ResponseType
 	if rt == nil {
 		return "return None"
+	}
+	if rt.IsBytes() {
+		return "return resp.content"
 	}
 	switch rt.Kind {
 	case ir.TypeRef:
@@ -751,23 +757,7 @@ class Client:
             params=params,
 {{- end}}
         )
-{{- if hasResponse .ResponseType}}
-{{- if eq .ResponseType.Kind 2}}
-        return {{pyType .ResponseType}}.model_validate(resp.json())
-{{- else if eq .ResponseType.Kind 1}}
-{{- if .ResponseType.Elem}}{{- if eq .ResponseType.Elem.Kind 2}}
-        return [{{pyTypeDeref .ResponseType.Elem}}.model_validate(item) for item in resp.json()]
-{{- else}}
-        return resp.json()
-{{- end}}{{- else}}
-        return resp.json()
-{{- end}}
-{{- else}}
-        return resp.json()
-{{- end}}
-{{- else}}
-        return None
-{{- end}}
+        {{pyReturnStmt . $style}}
 {{- end}}
 {{end}}`
 
@@ -957,23 +947,7 @@ class Client:
             params=params,
 {{- end}}
         )
-{{- if hasResponse .ResponseType}}
-{{- if eq .ResponseType.Kind 2}}
-        return {{pyType .ResponseType}}(**resp.json())
-{{- else if eq .ResponseType.Kind 1}}
-{{- if .ResponseType.Elem}}{{- if eq .ResponseType.Elem.Kind 2}}
-        return [{{pyTypeDeref .ResponseType.Elem}}(**item) for item in resp.json()]
-{{- else}}
-        return resp.json()
-{{- end}}{{- else}}
-        return resp.json()
-{{- end}}
-{{- else}}
-        return resp.json()
-{{- end}}
-{{- else}}
-        return None
-{{- end}}
+        {{pyReturnStmt . $style}}
 {{- end}}
 {{end}}`
 
@@ -1206,23 +1180,7 @@ class {{.ClassName}}:
             params=params,
 {{- end}}
         )
-{{- if hasResponse .ResponseType}}
-{{- if eq .ResponseType.Kind 2}}
-        return {{pyType .ResponseType}}.model_validate(resp.json())
-{{- else if eq .ResponseType.Kind 1}}
-{{- if .ResponseType.Elem}}{{- if eq .ResponseType.Elem.Kind 2}}
-        return [{{pyTypeDeref .ResponseType.Elem}}.model_validate(item) for item in resp.json()]
-{{- else}}
-        return resp.json()
-{{- end}}{{- else}}
-        return resp.json()
-{{- end}}
-{{- else}}
-        return resp.json()
-{{- end}}
-{{- else}}
-        return None
-{{- end}}
+        {{pyReturnStmt . $style}}
 {{- end}}
 {{end}}`
 
@@ -1462,22 +1420,6 @@ class {{.ClassName}}:
             params=params,
 {{- end}}
         )
-{{- if hasResponse .ResponseType}}
-{{- if eq .ResponseType.Kind 2}}
-        return {{pyType .ResponseType}}(**resp.json())
-{{- else if eq .ResponseType.Kind 1}}
-{{- if .ResponseType.Elem}}{{- if eq .ResponseType.Elem.Kind 2}}
-        return [{{pyTypeDeref .ResponseType.Elem}}(**item) for item in resp.json()]
-{{- else}}
-        return resp.json()
-{{- end}}{{- else}}
-        return resp.json()
-{{- end}}
-{{- else}}
-        return resp.json()
-{{- end}}
-{{- else}}
-        return None
-{{- end}}
+        {{pyReturnStmt . $style}}
 {{- end}}
 {{end}}`
