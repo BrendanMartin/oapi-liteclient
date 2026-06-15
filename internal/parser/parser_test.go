@@ -806,6 +806,41 @@ paths:
 	}
 }
 
+func TestParseTextResponseIsNotBytesV2(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "text-v2.yaml")
+	specYAML := `swagger: "2.0"
+info: {title: Text V2 API, version: "1.0"}
+host: api.example.com
+schemes: [https]
+paths:
+  /health:
+    get:
+      operationId: health
+      produces: [text/plain]
+      responses:
+        "200":
+          description: plain text
+          schema:
+            type: string
+`
+	if err := os.WriteFile(specPath, []byte(specYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	spec, err := Parse(specPath)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	ep := findEndpoint(spec.Endpoints, "health")
+	if ep == nil {
+		t.Fatal("health endpoint missing")
+	}
+	if ep.ResponseType != nil {
+		t.Fatalf("ResponseType = %+v, text/plain must not be decoded", ep.ResponseType)
+	}
+}
+
 func testdataPath(name string) string {
 	// Walk up from internal/parser to project root
 	wd, _ := os.Getwd()
