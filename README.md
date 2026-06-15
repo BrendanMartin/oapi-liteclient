@@ -121,7 +121,8 @@ For a typical 3-5 endpoint API, the output is a single file (~100-200 lines). Fo
 ## OpenAPI Support
 
 - OpenAPI 3.0 and 3.1
-- JSON request/response bodies
+- JSON request/response bodies, including JSON-Patch (`application/json-patch+json`) — the request body's media type is sent as the `Content-Type`
+- `multipart/form-data` uploads — binary fields become file parts, other fields are sent as form values under their original (possibly dotted) keys; a container prefix common to all keys is stripped from parameter names
 - Path and query parameters
 - `$ref` to component schemas
 - Arrays of primitives and refs

@@ -342,6 +342,52 @@ func TestGenerateGoCustomContentType(t *testing.T) {
 	}
 }
 
+func TestGenerateGoMultipart(t *testing.T) {
+	spec := &ir.Spec{
+		Title: "Multipart API",
+		Models: []ir.Model{
+			{Name: "CreatedResponseDto", Fields: []ir.Field{{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true}}},
+		},
+		Endpoints: []ir.Endpoint{
+			{
+				OperationID:  "createAttachment",
+				Method:       "POST",
+				Path:         "/api/attachments",
+				ResponseType: &ir.Type{Kind: ir.TypeRef, Ref: "CreatedResponseDto"},
+				FormFields: []ir.FormField{
+					{Key: "File", Name: "File", IsFile: true, Required: true},
+					{Key: "Detail.Owner.Type", Name: "Owner.Type", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true},
+					{Key: "Detail.IsNoteAttachment", Name: "IsNoteAttachment", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimBool}},
+				},
+			},
+		},
+	}
+
+	files := mustGenerateGo(t, spec, GoOptions{Auth: "none", Package: "attach"})
+	output := files["client.go"]
+
+	if _, err := format.Source([]byte(output)); err != nil {
+		t.Fatalf("generated code is not valid Go: %v\n%s", err, output)
+	}
+	mustCompileGo(t, files, "attach")
+
+	checks := []string{
+		"type CreateAttachmentOp struct {",
+		"file             io.Reader",
+		"func (c *Client) CreateAttachment(ctx context.Context, file io.Reader, ownerType string) *CreateAttachmentOp {",
+		"func (r *CreateAttachmentOp) IsNoteAttachment(v bool) *CreateAttachmentOp {",
+		`w.CreateFormFile("File", "File")`,
+		`w.WriteField("Detail.Owner.Type", r.ownerType)`,
+		`w.WriteField("Detail.IsNoteAttachment", fmt.Sprint(*r.isNoteAttachment))`,
+		`r.client.doRaw(r.ctx, "POST", path, w.FormDataContentType(), &buf)`,
+	}
+	for _, c := range checks {
+		if !strings.Contains(output, c) {
+			t.Errorf("output missing %q\n\nFull output:\n%s", c, output)
+		}
+	}
+}
+
 func TestGenerateGoOptionalQueryParams(t *testing.T) {
 	spec := &ir.Spec{
 		Title:   "Test API",

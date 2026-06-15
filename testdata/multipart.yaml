@@ -1,0 +1,43 @@
+openapi: 3.0.0
+info:
+  title: Multipart API
+  version: "1.0"
+servers:
+  - url: https://api.example.com
+paths:
+  /api/attachments:
+    post:
+      operationId: createAttachment
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [File, "Detail.Owner.Type", "Detail.Owner.Id"]
+              properties:
+                File:
+                  type: string
+                  format: binary
+                "Detail.Owner.Type":
+                  type: string
+                "Detail.Owner.Id":
+                  type: string
+                "Detail.Description":
+                  type: string
+                "Detail.IsNoteAttachment":
+                  type: boolean
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedResponseDto"
+components:
+  schemas:
+    CreatedResponseDto:
+      type: object
+      properties:
+        id:
+          type: string

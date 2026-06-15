@@ -187,6 +187,64 @@ func TestGeneratePythonCustomContentType(t *testing.T) {
 	}
 }
 
+func multipartSpec() *ir.Spec {
+	return &ir.Spec{
+		Title: "Multipart API",
+		Models: []ir.Model{
+			{Name: "CreatedResponseDto", Fields: []ir.Field{{Name: "id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}}}},
+		},
+		Endpoints: []ir.Endpoint{
+			{
+				OperationID:  "createAttachment",
+				Method:       "POST",
+				Path:         "/api/attachments",
+				ResponseType: &ir.Type{Kind: ir.TypeRef, Ref: "CreatedResponseDto"},
+				FormFields: []ir.FormField{
+					{Key: "File", Name: "File", IsFile: true, Required: true},
+					{Key: "Detail.Owner.Type", Name: "Owner.Type", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true},
+					{Key: "Detail.Owner.Id", Name: "Owner.Id", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimString}, Required: true},
+					{Key: "Detail.IsNoteAttachment", Name: "IsNoteAttachment", Type: ir.Type{Kind: ir.TypePrimitive, Prim: ir.PrimBool}},
+				},
+			},
+		},
+	}
+}
+
+func TestGeneratePythonMultipart(t *testing.T) {
+	output := mustGeneratePython(t, multipartSpec(), PythonOptions{Style: "pydantic", Auth: "none"})["client.py"]
+
+	checks := []string{
+		"def create_attachment(",
+		"        file,",
+		"        owner_type: str,",
+		"        owner_id: str,",
+		"        is_note_attachment: Optional[bool] = None,",
+		`        files = {"File": file}`,
+		`        data["Detail.Owner.Type"] = owner_type`,
+		`        data["Detail.Owner.Id"] = owner_id`,
+		"        if is_note_attachment is not None:",
+		`            data["Detail.IsNoteAttachment"] = is_note_attachment`,
+		"            files=files,",
+		"            data=data,",
+		"        return CreatedResponseDto.model_validate(resp.json())",
+	}
+	for _, c := range checks {
+		if !strings.Contains(output, c) {
+			t.Errorf("output missing %q", c)
+		}
+	}
+	if strings.Contains(output, "json=") {
+		t.Error("multipart endpoint should not serialize body as json=")
+	}
+}
+
+func TestGeneratePythonMultipartDataclass(t *testing.T) {
+	output := mustGeneratePython(t, multipartSpec(), PythonOptions{Style: "dataclass", Auth: "none"})["client.py"]
+	if !strings.Contains(output, "return CreatedResponseDto(**resp.json())") {
+		t.Error("dataclass multipart should construct response via (**resp.json())")
+	}
+}
+
 func TestGeneratePythonNoAuth(t *testing.T) {
 	spec := &ir.Spec{
 		Title: "No Auth API",

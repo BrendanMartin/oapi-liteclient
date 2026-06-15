@@ -155,6 +155,95 @@ func buildModel(name string, schema *base.Schema) ir.Model {
 	return m
 }
 
+// buildFormFields flattens a multipart/form-data object schema into ordered form
+// fields: file (binary) parts first, then required values, then optional values.
+// A container segment common to every dotted field key is stripped from the
+// derived parameter names (e.g. Detail.Owner.Type -> Owner.Type).
+func buildFormFields(proxy *base.SchemaProxy) []ir.FormField {
+	schema := proxy.Schema()
+	if schema == nil || schema.Properties == nil {
+		return nil
+	}
+
+	requiredSet := make(map[string]bool, len(schema.Required))
+	for _, r := range schema.Required {
+		requiredSet[r] = true
+	}
+
+	var keys []string
+	for key := range schema.Properties.FromOldest() {
+		keys = append(keys, key)
+	}
+	names := stripCommonPrefix(keys)
+
+	var files, required, optional []ir.FormField
+	for key, fieldProxy := range schema.Properties.FromOldest() {
+		fieldSchema := fieldProxy.Schema()
+		field := ir.FormField{
+			Key:      key,
+			Name:     names[key],
+			Type:     schemaToType(fieldProxy),
+			Required: requiredSet[key],
+			IsFile:   fieldSchema != nil && len(fieldSchema.Type) > 0 && fieldSchema.Type[0] == "string" && fieldSchema.Format == "binary",
+		}
+		switch {
+		case field.IsFile:
+			files = append(files, field)
+		case field.Required:
+			required = append(required, field)
+		default:
+			optional = append(optional, field)
+		}
+	}
+	return append(append(files, required...), optional...)
+}
+
+// stripCommonPrefix maps each form-field key to a parameter base name with the
+// leading dotted segments shared by all multi-segment keys removed. Keys without
+// a dot (e.g. "File") are returned unchanged. At least one trailing segment is
+// always kept.
+func stripCommonPrefix(keys []string) map[string]string {
+	var multi [][]string
+	for _, k := range keys {
+		if segs := strings.Split(k, "."); len(segs) > 1 {
+			multi = append(multi, segs)
+		}
+	}
+
+	common := 0
+	for len(multi) > 0 {
+		seg := ""
+		ok := true
+		for i, segs := range multi {
+			if common >= len(segs)-1 { // keep at least one trailing segment
+				ok = false
+				break
+			}
+			if i == 0 {
+				seg = segs[common]
+			} else if segs[common] != seg {
+				ok = false
+				break
+			}
+		}
+		if !ok {
+			break
+		}
+		common++
+	}
+
+	out := make(map[string]string, len(keys))
+	for _, k := range keys {
+		segs := strings.Split(k, ".")
+		if len(segs) > 1 && common > 0 && common < len(segs) {
+			out[k] = strings.Join(segs[common:], ".")
+		} else {
+			out[k] = k
+		}
+	}
+	return out
+}
+
 func schemaToType(proxy *base.SchemaProxy) ir.Type {
 	schema := proxy.Schema()
 	if schema == nil {
@@ -246,7 +335,8 @@ func buildEndpoints(path string, pathItem *v3.PathItem) []ir.Endpoint {
 			ep.Params = append(ep.Params, p)
 		}
 
-		// Request body
+		// Request body: prefer a JSON media type; otherwise fall back to
+		// multipart/form-data, modeled as flattened form fields.
 		if op.RequestBody != nil && op.RequestBody.Content != nil {
 			for mediaType, content := range op.RequestBody.Content.FromOldest() {
 				if isJSONMediaType(mediaType) && content.Schema != nil {
@@ -254,6 +344,11 @@ func buildEndpoints(path string, pathItem *v3.PathItem) []ir.Endpoint {
 					ep.RequestBody = &t
 					ep.RequestCType = mediaType
 					break
+				}
+			}
+			if ep.RequestBody == nil {
+				if content, ok := op.RequestBody.Content.Get("multipart/form-data"); ok && content.Schema != nil {
+					ep.FormFields = buildFormFields(content.Schema)
 				}
 			}
 		}

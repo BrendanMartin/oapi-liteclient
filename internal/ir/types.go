@@ -74,9 +74,21 @@ type Endpoint struct {
 	Path         string // e.g. /pets/{petId}
 	Tags         []string
 	Params       []Param
-	RequestBody  *Type  // nil if no body
-	RequestCType string // media type of the request body, e.g. "application/json-patch+json"; empty if no body
-	ResponseType *Type  // nil if no response body (e.g. 204)
+	RequestBody  *Type       // nil if no body
+	RequestCType string      // media type of the request body, e.g. "application/json-patch+json"; empty if no body
+	FormFields   []FormField // multipart/form-data body fields; nil unless the request body is multipart/form-data
+	ResponseType *Type       // nil if no response body (e.g. 204)
+}
+
+// FormField is one part of a multipart/form-data request body. Field keys may be
+// flat dotted ASP.NET-style names (e.g. "Detail.Owner.Type"); Name is the
+// derived method-parameter base name with any common container prefix stripped.
+type FormField struct {
+	Key      string // wire field name sent in the request, e.g. "Detail.Owner.Type" or "File"
+	Name     string // method parameter base name (generators apply language casing), e.g. "Owner.Type"
+	Type     Type
+	Required bool
+	IsFile   bool // binary upload sent as a file part; otherwise a plain form value
 }
 
 // Param is a path or query parameter.

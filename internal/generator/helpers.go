@@ -16,6 +16,35 @@ func customContentType(ep ir.Endpoint) bool {
 	return ep.RequestCType != "" && ep.RequestCType != "application/json"
 }
 
+// isMultipart reports whether an endpoint has a multipart/form-data request body.
+func isMultipart(ep ir.Endpoint) bool {
+	return len(ep.FormFields) > 0
+}
+
+// formFileFields, formRequiredFields, and formOptionalFields partition a
+// multipart body's fields into file parts, required values, and optional values.
+func formFileFields(fields []ir.FormField) []ir.FormField {
+	return filterFormFields(fields, func(f ir.FormField) bool { return f.IsFile })
+}
+
+func formRequiredFields(fields []ir.FormField) []ir.FormField {
+	return filterFormFields(fields, func(f ir.FormField) bool { return !f.IsFile && f.Required })
+}
+
+func formOptionalFields(fields []ir.FormField) []ir.FormField {
+	return filterFormFields(fields, func(f ir.FormField) bool { return !f.IsFile && !f.Required })
+}
+
+func filterFormFields(fields []ir.FormField, keep func(ir.FormField) bool) []ir.FormField {
+	var out []ir.FormField
+	for _, f := range fields {
+		if keep(f) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 var reservedFilenames = map[string]bool{
 	"client":   true,
 	"_base":    true,

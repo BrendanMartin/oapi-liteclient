@@ -67,6 +67,8 @@ var funcMap = template.FuncMap{
 	"hasResponse":         func(t *ir.Type) bool { return t != nil },
 	"hasParams":           func(ep ir.Endpoint) bool { return len(ep.Params) > 0 || ep.RequestBody != nil },
 	"customCType":         customContentType,
+	"isMultipart":         isMultipart,
+	"pyMultipartMethod":   pyMultipartMethod,
 	"docstring":           docstring,
 	"sortedFields":        sortedFields,
 	"pathParams":          pathParams,
@@ -293,6 +295,83 @@ func pyMethodName(opID string) string {
 	return pyName(opID)
 }
 
+// pyMultipartMethod renders a complete Python method for a multipart/form-data
+// endpoint: file parts go through httpx files=, other fields through data= using
+// their original (possibly dotted) wire keys. The body is identical for pydantic
+// and dataclass styles except for the response-decode statement.
+func pyMultipartMethod(ep ir.Endpoint, style string) string {
+	files := formFileFields(ep.FormFields)
+	required := formRequiredFields(ep.FormFields)
+	optional := formOptionalFields(ep.FormFields)
+
+	var b strings.Builder
+	b.WriteString("\n    def ")
+	b.WriteString(pyMethodName(ep.OperationID))
+	b.WriteString("(\n        self,\n")
+	for _, f := range files {
+		fmt.Fprintf(&b, "        %s,\n", pyName(f.Name))
+	}
+	for _, f := range required {
+		fmt.Fprintf(&b, "        %s: %s,\n", pyName(f.Name), pyType(f.Type))
+	}
+	for _, f := range optional {
+		fmt.Fprintf(&b, "        %s: Optional[%s] = None,\n", pyName(f.Name), pyType(f.Type))
+	}
+	b.WriteString("    )")
+	if ep.ResponseType != nil {
+		fmt.Fprintf(&b, " -> %s", pyType(*ep.ResponseType))
+	}
+	b.WriteString(":\n")
+	if doc := docstring(ep); doc != "" {
+		fmt.Fprintf(&b, "        \"\"\"%s\"\"\"\n", doc)
+	}
+
+	b.WriteString("        files = {")
+	for i, f := range files {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%q: %s", f.Key, pyName(f.Name))
+	}
+	b.WriteString("}\n        data = {}\n")
+	for _, f := range required {
+		fmt.Fprintf(&b, "        data[%q] = %s\n", f.Key, pyName(f.Name))
+	}
+	for _, f := range optional {
+		fmt.Fprintf(&b, "        if %s is not None:\n            data[%q] = %s\n", pyName(f.Name), f.Key, pyName(f.Name))
+	}
+
+	fmt.Fprintf(&b, "        resp = self._request(\n            %q,\n            f\"%s\",\n            files=files,\n            data=data,\n        )\n", ep.Method, fmtPath(ep.Path))
+	fmt.Fprintf(&b, "        %s\n", pyReturnStmt(ep, style))
+	return b.String()
+}
+
+// pyReturnStmt renders the response-decode return statement for an endpoint,
+// matching the chosen model style (pydantic vs dataclass construction).
+func pyReturnStmt(ep ir.Endpoint, style string) string {
+	rt := ep.ResponseType
+	if rt == nil {
+		return "return None"
+	}
+	switch rt.Kind {
+	case ir.TypeRef:
+		if style == "dataclass" {
+			return fmt.Sprintf("return %s(**resp.json())", pyType(*rt))
+		}
+		return fmt.Sprintf("return %s.model_validate(resp.json())", pyType(*rt))
+	case ir.TypeArray:
+		if rt.Elem != nil && rt.Elem.Kind == ir.TypeRef {
+			if style == "dataclass" {
+				return fmt.Sprintf("return [%s(**item) for item in resp.json()]", pyType(*rt.Elem))
+			}
+			return fmt.Sprintf("return [%s.model_validate(item) for item in resp.json()]", pyType(*rt.Elem))
+		}
+		return "return resp.json()"
+	default:
+		return "return resp.json()"
+	}
+}
+
 // pyDefaultVal converts a raw default string to a Python literal based on the field type.
 func pyDefaultVal(f ir.Field) string {
 	if f.Default == nil {
@@ -454,7 +533,8 @@ packages = ["."]
 `, safePkg, strings.Join(deps, ",\n"), safePkg)
 }
 
-const pydanticTemplate = `"""Auto-generated API client for {{.Title}}."""
+const pydanticTemplate = `{{- $style := "pydantic" -}}
+"""Auto-generated API client for {{.Title}}."""
 from __future__ import annotations
 
 import httpx
@@ -607,6 +687,8 @@ class Client:
             raise APIError(resp.status_code, resp.text, method, path)
         return resp
 {{range .Endpoints}}
+{{- if isMultipart .}}{{pyMultipartMethod . $style}}
+{{- else}}
 {{- if hasParams .}}
     def {{pyMethodName .OperationID}}(
         self,
@@ -673,9 +755,11 @@ class Client:
 {{- else}}
         return None
 {{- end}}
+{{- end}}
 {{end}}`
 
-const dataclassTemplate = `"""Auto-generated API client for {{.Title}}."""
+const dataclassTemplate = `{{- $style := "dataclass" -}}
+"""Auto-generated API client for {{.Title}}."""
 from __future__ import annotations
 
 import httpx
@@ -809,6 +893,8 @@ class Client:
             raise APIError(resp.status_code, resp.text, method, path)
         return resp
 {{range .Endpoints}}
+{{- if isMultipart .}}{{pyMultipartMethod . $style}}
+{{- else}}
 {{- if hasParams .}}
     def {{pyMethodName .OperationID}}(
         self,
@@ -874,6 +960,7 @@ class Client:
 {{- end}}
 {{- else}}
         return None
+{{- end}}
 {{- end}}
 {{end}}`
 
@@ -1039,7 +1126,8 @@ class {{.Name}}(BaseModel):
 {{if not .Fields}}    pass{{end}}
 {{end}}`
 
-const pyTagTemplate = `"""Auto-generated tag client."""
+const pyTagTemplate = `{{- $style := "pydantic" -}}
+"""Auto-generated tag client."""
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -1054,6 +1142,8 @@ class {{.ClassName}}:
     def __init__(self, client: BaseClient):
         self._client = client
 {{range .Endpoints}}
+{{- if isMultipart .}}{{pyMultipartMethod . $style}}
+{{- else}}
 {{- if hasParams .}}
     def {{pyMethodName .OperationID}}(
         self,
@@ -1119,6 +1209,7 @@ class {{.ClassName}}:
 {{- end}}
 {{- else}}
         return None
+{{- end}}
 {{- end}}
 {{end}}`
 
@@ -1291,7 +1382,8 @@ class {{.Name}}:
 {{if not .Fields}}    pass{{end}}
 {{end}}`
 
-const pyTagDcTemplate = `"""Auto-generated tag client."""
+const pyTagDcTemplate = `{{- $style := "dataclass" -}}
+"""Auto-generated tag client."""
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -1306,6 +1398,8 @@ class {{.ClassName}}:
     def __init__(self, client: BaseClient):
         self._client = client
 {{range .Endpoints}}
+{{- if isMultipart .}}{{pyMultipartMethod . $style}}
+{{- else}}
 {{- if hasParams .}}
     def {{pyMethodName .OperationID}}(
         self,
@@ -1371,5 +1465,6 @@ class {{.ClassName}}:
 {{- end}}
 {{- else}}
         return None
+{{- end}}
 {{- end}}
 {{end}}`

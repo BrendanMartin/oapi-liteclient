@@ -148,6 +148,8 @@ var goFuncMap = template.FuncMap{
 		return goType(*t)
 	},
 	"hasBody":             func(t *ir.Type) bool { return t != nil },
+	"isMultipart":         isMultipart,
+	"goMultipartMethod":   goMultipartMethod,
 	"isArrayBody":         func(t *ir.Type) bool { return t != nil && t.Kind == ir.TypeArray },
 	"hasResponse":         func(t *ir.Type) bool { return t != nil },
 	"isArrayResponse":     func(t *ir.Type) bool { return t != nil && t.Kind == ir.TypeArray },
@@ -390,19 +392,23 @@ func (c *Client) do(ctx context.Context, method, path, contentType string, body 
 			return nil, fmt.Errorf("marshaling request body: %w", err)
 		}
 		reqBody = bytes.NewReader(b)
+		if contentType == "" {
+			contentType = "application/json"
+		}
 	}
+	return c.doRaw(ctx, method, path, contentType, reqBody)
+}
+
+func (c *Client) doRaw(ctx context.Context, method, path, contentType string, body io.Reader) (*http.Response, error) {
 	baseURL := c.BaseURL
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
-	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(baseURL, "/")+path, reqBody)
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(baseURL, "/")+path, body)
 	if err != nil {
 		return nil, err
 	}
-	if body != nil {
-		if contentType == "" {
-			contentType = "application/json"
-		}
+	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
 {{- if eq .AuthMode "bearer-token"}}
@@ -440,6 +446,8 @@ func (c *Client) do(ctx context.Context, method, path, contentType string, body 
 }
 {{range .Endpoints}}
 {{- if .OperationID}}
+{{- if isMultipart .}}{{goMultipartMethod .}}
+{{- else}}
 {{- $opName := goName .OperationID}}
 
 type {{$opName}}Op struct {
@@ -578,6 +586,7 @@ func (r *{{$opName}}Op) Do() error {
 }
 {{- end}}
 {{- end}}
+{{- end}}
 {{end}}
 {{- end}}
 `
@@ -608,6 +617,124 @@ func goParamName(name string) string {
 		return s + "_"
 	}
 	return s
+}
+
+// goMultipartMethod renders the full Op struct, constructor, optional-field
+// setters, and Do() for a multipart/form-data endpoint. File parts are written
+// with multipart.CreateFormFile; other fields use their original wire keys.
+// Output is fed through gofmt by the caller, so spacing here need not be exact.
+func goMultipartMethod(ep ir.Endpoint) string {
+	opName := goName(ep.OperationID)
+	pathPs := pathParams(ep.Params)
+	files := formFileFields(ep.FormFields)
+	required := formRequiredFields(ep.FormFields)
+	optional := formOptionalFields(ep.FormFields)
+
+	var b strings.Builder
+
+	// Op struct.
+	fmt.Fprintf(&b, "\ntype %sOp struct {\n", opName)
+	b.WriteString("\tclient *Client\n\tctx    context.Context\n")
+	for _, p := range pathPs {
+		fmt.Fprintf(&b, "\t%s %s\n", goParamName(p.Name), goType(p.Type))
+	}
+	for _, f := range files {
+		fmt.Fprintf(&b, "\t%s io.Reader\n", goParamName(f.Name))
+	}
+	for _, f := range required {
+		fmt.Fprintf(&b, "\t%s %s\n", goParamName(f.Name), goType(f.Type))
+	}
+	for _, f := range optional {
+		fmt.Fprintf(&b, "\t%s *%s\n", goParamName(f.Name), goType(f.Type))
+	}
+	b.WriteString("}\n")
+
+	// Constructor.
+	fmt.Fprintf(&b, "\nfunc (c *Client) %s(ctx context.Context", opName)
+	for _, p := range pathPs {
+		fmt.Fprintf(&b, ", %s %s", goParamName(p.Name), goType(p.Type))
+	}
+	for _, f := range files {
+		fmt.Fprintf(&b, ", %s io.Reader", goParamName(f.Name))
+	}
+	for _, f := range required {
+		fmt.Fprintf(&b, ", %s %s", goParamName(f.Name), goType(f.Type))
+	}
+	fmt.Fprintf(&b, ") *%sOp {\n\treturn &%sOp{client: c, ctx: ctx", opName, opName)
+	for _, p := range pathPs {
+		fmt.Fprintf(&b, ", %s: %s", goParamName(p.Name), goParamName(p.Name))
+	}
+	for _, f := range files {
+		fmt.Fprintf(&b, ", %s: %s", goParamName(f.Name), goParamName(f.Name))
+	}
+	for _, f := range required {
+		fmt.Fprintf(&b, ", %s: %s", goParamName(f.Name), goParamName(f.Name))
+	}
+	b.WriteString("}\n}\n")
+
+	// Optional-field setters.
+	for _, f := range optional {
+		fmt.Fprintf(&b, "\nfunc (r *%sOp) %s(v %s) *%sOp {\n\tr.%s = &v\n\treturn r\n}\n",
+			opName, goName(f.Name), goType(f.Type), opName, goParamName(f.Name))
+	}
+
+	// Do().
+	hasResp := ep.ResponseType != nil
+	errRet := "err"
+	if hasResp {
+		retType := goType(*ep.ResponseType)
+		fmt.Fprintf(&b, "\nfunc (r *%sOp) Do() (%s, error) {\n\tvar zero %s\n", opName, retType, retType)
+		errRet = "zero, err"
+	} else {
+		fmt.Fprintf(&b, "\nfunc (r *%sOp) Do() error {\n", opName)
+	}
+	b.WriteString("\tvar buf bytes.Buffer\n\tw := multipart.NewWriter(&buf)\n")
+	for _, f := range files {
+		fmt.Fprintf(&b, "\tfw, err := w.CreateFormFile(%q, %q)\n\tif err != nil {\n\t\treturn %s\n\t}\n", f.Key, f.Key, errRet)
+		fmt.Fprintf(&b, "\tif _, err := io.Copy(fw, r.%s); err != nil {\n\t\treturn %s\n\t}\n", goParamName(f.Name), errRet)
+	}
+	for _, f := range required {
+		fmt.Fprintf(&b, "\tif err := w.WriteField(%q, %s); err != nil {\n\t\treturn %s\n\t}\n", f.Key, goFormValueExpr(f, false), errRet)
+	}
+	for _, f := range optional {
+		fmt.Fprintf(&b, "\tif r.%s != nil {\n\t\tif err := w.WriteField(%q, %s); err != nil {\n\t\t\treturn %s\n\t\t}\n\t}\n", goParamName(f.Name), f.Key, goFormValueExpr(f, true), errRet)
+	}
+	fmt.Fprintf(&b, "\tif err := w.Close(); err != nil {\n\t\treturn %s\n\t}\n", errRet)
+
+	fmtStr, args := goFmtPath(ep.Path)
+	if len(args) > 0 {
+		fmt.Fprintf(&b, "\tpath := fmt.Sprintf(%q", fmtStr)
+		for _, a := range args {
+			fmt.Fprintf(&b, ", r.%s", a)
+		}
+		b.WriteString(")\n")
+	} else {
+		fmt.Fprintf(&b, "\tpath := %q\n", fmtStr)
+	}
+
+	fmt.Fprintf(&b, "\tresp, err := r.client.doRaw(r.ctx, %q, path, w.FormDataContentType(), &buf)\n", ep.Method)
+	if hasResp {
+		retType := goType(*ep.ResponseType)
+		b.WriteString("\tif err != nil {\n\t\treturn zero, err\n\t}\n\tdefer resp.Body.Close()\n")
+		fmt.Fprintf(&b, "\tvar result %s\n", retType)
+		b.WriteString("\tif err := json.NewDecoder(resp.Body).Decode(&result); err != nil {\n\t\treturn zero, fmt.Errorf(\"decoding response: %w\", err)\n\t}\n\treturn result, nil\n}\n")
+	} else {
+		b.WriteString("\tif err != nil {\n\t\treturn err\n\t}\n\tresp.Body.Close()\n\treturn nil\n}\n")
+	}
+	return b.String()
+}
+
+// goFormValueExpr renders the Go expression that stringifies a form field value
+// for multipart.WriteField. Non-string scalars are wrapped in fmt.Sprint.
+func goFormValueExpr(f ir.FormField, optional bool) string {
+	ref := "r." + goParamName(f.Name)
+	if optional {
+		ref = "*" + ref
+	}
+	if f.Type.Kind == ir.TypePrimitive && f.Type.Prim == ir.PrimString {
+		return ref
+	}
+	return fmt.Sprintf("fmt.Sprint(%s)", ref)
 }
 
 // --- Split-mode Go templates ---
@@ -723,19 +850,23 @@ func (c *Client) do(ctx context.Context, method, path, contentType string, body 
 			return nil, fmt.Errorf("marshaling request body: %w", err)
 		}
 		reqBody = bytes.NewReader(b)
+		if contentType == "" {
+			contentType = "application/json"
+		}
 	}
+	return c.doRaw(ctx, method, path, contentType, reqBody)
+}
+
+func (c *Client) doRaw(ctx context.Context, method, path, contentType string, body io.Reader) (*http.Response, error) {
 	baseURL := c.BaseURL
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
-	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(baseURL, "/")+path, reqBody)
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(baseURL, "/")+path, body)
 	if err != nil {
 		return nil, err
 	}
-	if body != nil {
-		if contentType == "" {
-			contentType = "application/json"
-		}
+	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
 {{- if eq .AuthMode "bearer-token"}}
@@ -784,6 +915,8 @@ import (
 )
 {{range .Endpoints}}
 {{- if .OperationID}}
+{{- if isMultipart .}}{{goMultipartMethod .}}
+{{- else}}
 {{- $opName := goName .OperationID}}
 
 type {{$opName}}Op struct {
@@ -920,6 +1053,7 @@ func (r *{{$opName}}Op) Do() error {
 	resp.Body.Close()
 	return nil
 }
+{{- end}}
 {{- end}}
 {{- end}}
 {{end}}`

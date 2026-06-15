@@ -391,6 +391,44 @@ func TestParseComplex(t *testing.T) {
 	}
 }
 
+func TestParseMultipart(t *testing.T) {
+	spec, err := Parse(testdataPath("multipart.yaml"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	ep := findEndpoint(spec.Endpoints, "createAttachment")
+	if ep == nil {
+		t.Fatal("createAttachment endpoint not found")
+	}
+	if ep.RequestBody != nil {
+		t.Error("multipart endpoint should not set RequestBody")
+	}
+
+	// Expect: file part first, then required values, then optional values; the
+	// shared "Detail." container prefix is stripped from parameter names.
+	want := []ir.FormField{
+		{Key: "File", Name: "File", Required: true, IsFile: true},
+		{Key: "Detail.Owner.Type", Name: "Owner.Type", Required: true},
+		{Key: "Detail.Owner.Id", Name: "Owner.Id", Required: true},
+		{Key: "Detail.Description", Name: "Description"},
+		{Key: "Detail.IsNoteAttachment", Name: "IsNoteAttachment"},
+	}
+	if len(ep.FormFields) != len(want) {
+		t.Fatalf("FormFields len = %d, want %d: %+v", len(ep.FormFields), len(want), ep.FormFields)
+	}
+	for i, w := range want {
+		got := ep.FormFields[i]
+		if got.Key != w.Key || got.Name != w.Name || got.Required != w.Required || got.IsFile != w.IsFile {
+			t.Errorf("FormFields[%d] = {Key:%q Name:%q Required:%v IsFile:%v}, want {Key:%q Name:%q Required:%v IsFile:%v}",
+				i, got.Key, got.Name, got.Required, got.IsFile, w.Key, w.Name, w.Required, w.IsFile)
+		}
+	}
+	if pk := ep.FormFields[4].Type.Prim; pk != ir.PrimBool {
+		t.Errorf("IsNoteAttachment prim = %v, want PrimBool", pk)
+	}
+}
+
 func testdataPath(name string) string {
 	// Walk up from internal/parser to project root
 	wd, _ := os.Getwd()
