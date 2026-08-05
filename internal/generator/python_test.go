@@ -1,6 +1,9 @@
 package generator
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -878,6 +881,175 @@ func TestGeneratePythonLenient(t *testing.T) {
 	}
 	if !strings.Contains(code, "Optional[str]") {
 		t.Error("lenient mode: all fields should be Optional")
+	}
+}
+
+// pythonExe finds an interpreter able to run the emitted APIError, or "" if none.
+// Each candidate is probed by actually executing it: on Windows the PATH holds a
+// python3.exe App Execution Alias that resolves but only prints a Store advert.
+func pythonExe() string {
+	for _, name := range []string{"python3", "python", "py"} {
+		p, err := exec.LookPath(name)
+		if err != nil {
+			continue
+		}
+		if err := exec.Command(p, "-c", "import pickle").Run(); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+// extractAPIError slices the APIError class out of a generated module: the class
+// alone has no third-party imports, so it runs without httpx or pydantic present.
+func extractAPIError(t *testing.T, module string) string {
+	t.Helper()
+	const header = "class APIError(Exception):"
+	start := strings.Index(module, header)
+	if start < 0 {
+		t.Fatalf("generated module has no %s\n\n%s", header, module)
+	}
+	lines := strings.Split(module[start:], "\n")
+	body := []string{lines[0]}
+	for _, ln := range lines[1:] {
+		if strings.TrimSpace(ln) == "" {
+			body = append(body, ln)
+			continue
+		}
+		// A line back at column 0 is the next top-level statement.
+		if !strings.HasPrefix(ln, " ") && !strings.HasPrefix(ln, "\t") {
+			break
+		}
+		body = append(body, ln)
+	}
+	return strings.Join(body, "\n") + "\n"
+}
+
+// apiErrorPickleCheck asserts the two properties this class must hold: it
+// survives pickle (DBOS checkpoints a step's exception and re-raises it on
+// replay), and its message elides a long body while .body stays whole.
+const apiErrorPickleCheck = `
+import pickle
+from apierror_under_test import APIError
+
+body = "x" * 1000
+e = APIError(503, body, "POST", "/v1/things")
+
+# Attributes consumers' retry predicates read.
+assert e.status_code == 503, e.status_code
+assert e.body == body, "body attribute must not be truncated"
+assert e.method == "POST", e.method
+assert e.path == "/v1/things", e.path
+
+msg = str(e)
+assert msg.startswith("POST /v1/things returned 503: "), msg
+assert body not in msg, "full body leaked into the message"
+assert "x" * 300 in msg, "message should keep the first 300 body chars"
+assert "x" * 301 not in msg, "message kept more than 300 body chars"
+assert "truncated" in msg, msg
+assert "1000" in msg, "elision marker should state the real body length"
+assert len(msg) < 400, len(msg)
+assert body not in repr(e), "full body leaked into repr"
+assert e.args == (msg,), e.args
+
+# The regression: pickle rebuilds an exception via cls(*args); a 1-tuple of
+# args against a 4-argument __init__ raised TypeError on load.
+r = pickle.loads(pickle.dumps(e))
+assert type(r) is APIError, type(r)
+assert r.status_code == 503, r.status_code
+assert r.body == body, "body did not survive the pickle round trip"
+assert r.method == "POST", r.method
+assert r.path == "/v1/things", r.path
+assert str(r) == str(e), (str(r), str(e))
+assert repr(r) == repr(e), (repr(r), repr(e))
+
+# A short body is passed through untouched, before and after pickling.
+s = APIError(404, "not found", "GET", "/v1/x")
+assert str(s) == "GET /v1/x returned 404: not found", str(s)
+assert "truncated" not in str(s), str(s)
+s2 = pickle.loads(pickle.dumps(s))
+assert (s2.status_code, s2.body, s2.method, s2.path) == (404, "not found", "GET", "/v1/x")
+
+# Exactly at the limit is not an elision.
+edge = "y" * 300
+b = APIError(500, edge, "GET", "/b")
+assert "truncated" not in str(b), str(b)
+assert b.body == edge
+assert pickle.loads(pickle.dumps(b)).body == edge
+
+# Raised and caught still round-trips (the shape DBOS checkpoints).
+try:
+    raise APIError(429, "z" * 5000, "GET", "/rate")
+except APIError as caught:
+    revived = pickle.loads(pickle.dumps(caught))
+    assert revived.status_code == 429, revived.status_code
+    assert revived.body == "z" * 5000, len(revived.body)
+
+print("OK")
+`
+
+func runAPIErrorPickleCheck(t *testing.T, py, variant, module string) {
+	t.Helper()
+	dir := t.TempDir()
+	files := map[string]string{
+		"apierror_under_test.py": extractAPIError(t, module),
+		"check.py":               apiErrorPickleCheck,
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatalf("writing %s: %v", name, err)
+		}
+	}
+	cmd := exec.Command(py, "check.py")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s variant: emitted APIError failed the check: %v\n%s\n\nclass under test:\n%s",
+			variant, err, out, files["apierror_under_test.py"])
+	}
+	t.Logf("%s variant: %s", variant, strings.TrimSpace(string(out)))
+}
+
+// TestGeneratedAPIErrorPicklesAndTruncates runs the emitted APIError from every
+// template variant that carries one: the two single-file templates and the two
+// split-package _base.py templates.
+func TestGeneratedAPIErrorPicklesAndTruncates(t *testing.T) {
+	py := pythonExe()
+	if py == "" {
+		t.Skip("no python interpreter on PATH")
+	}
+
+	flat := &ir.Spec{
+		Title:     "Flat API",
+		BaseURL:   "https://api.example.com",
+		Endpoints: []ir.Endpoint{{OperationID: "getThing", Method: "GET", Path: "/things"}},
+	}
+	tagged := &ir.Spec{
+		Title:     "Tagged API",
+		BaseURL:   "https://api.example.com",
+		Endpoints: []ir.Endpoint{{OperationID: "getThing", Method: "GET", Path: "/things", Tags: []string{"Things"}}},
+	}
+
+	variants := []struct {
+		name  string
+		spec  *ir.Spec
+		opts  PythonOptions
+		emits string
+	}{
+		{"pydantic single-file", flat, PythonOptions{Style: "pydantic"}, "client.py"},
+		{"dataclass single-file", flat, PythonOptions{Style: "dataclass"}, "client.py"},
+		{"pydantic split _base", tagged, PythonOptions{Style: "pydantic"}, "_base.py"},
+		{"dataclass split _base", tagged, PythonOptions{Style: "dataclass"}, "_base.py"},
+	}
+	for _, v := range variants {
+		t.Run(v.name, func(t *testing.T) {
+			files := mustGeneratePython(t, v.spec, v.opts)
+			module, ok := files[v.emits]
+			if !ok {
+				t.Fatalf("expected %s among generated files, got %v", v.emits, fileNames(files))
+			}
+			runAPIErrorPickleCheck(t, py, v.name, module)
+		})
 	}
 }
 

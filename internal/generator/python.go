@@ -572,12 +572,27 @@ from typing import Any, Optional
 class APIError(Exception):
     """Raised on non-2xx responses."""
 
+    #: Response body is elided past this many characters in the exception
+    #: message (and therefore in repr, logs and checkpoints). The .body
+    #: attribute is never truncated.
+    MESSAGE_BODY_LIMIT = 300
+
     def __init__(self, status_code: int, body: str, method: str, path: str):
         self.status_code = status_code
         self.body = body
         self.method = method
         self.path = path
-        super().__init__(f"{method} {path} returned {status_code}: {body}")
+        shown = body
+        if len(shown) > self.MESSAGE_BODY_LIMIT:
+            shown = shown[: self.MESSAGE_BODY_LIMIT] + f"... [truncated, {len(body)} chars total]"
+        super().__init__(f"{method} {path} returned {status_code}: {shown}")
+
+    def __reduce__(self):
+        # Exception.__reduce__ would rebuild via cls(*self.args), and args holds
+        # only the one formatted message -- unpickling would TypeError on the
+        # three missing positional arguments. Rebuild from the full attributes
+        # instead, so .body survives a round trip intact.
+        return (type(self), (self.status_code, self.body, self.method, self.path))
 
 {{range .Models}}
 class {{.Name}}(BaseModel):
@@ -781,12 +796,27 @@ from typing import Any, Optional
 class APIError(Exception):
     """Raised on non-2xx responses."""
 
+    #: Response body is elided past this many characters in the exception
+    #: message (and therefore in repr, logs and checkpoints). The .body
+    #: attribute is never truncated.
+    MESSAGE_BODY_LIMIT = 300
+
     def __init__(self, status_code: int, body: str, method: str, path: str):
         self.status_code = status_code
         self.body = body
         self.method = method
         self.path = path
-        super().__init__(f"{method} {path} returned {status_code}: {body}")
+        shown = body
+        if len(shown) > self.MESSAGE_BODY_LIMIT:
+            shown = shown[: self.MESSAGE_BODY_LIMIT] + f"... [truncated, {len(body)} chars total]"
+        super().__init__(f"{method} {path} returned {status_code}: {shown}")
+
+    def __reduce__(self):
+        # Exception.__reduce__ would rebuild via cls(*self.args), and args holds
+        # only the one formatted message -- unpickling would TypeError on the
+        # three missing positional arguments. Rebuild from the full attributes
+        # instead, so .body survives a round trip intact.
+        return (type(self), (self.status_code, self.body, self.method, self.path))
 
 {{range .Models}}
 @dataclass
@@ -971,12 +1001,27 @@ from typing import Any, Optional
 class APIError(Exception):
     """Raised on non-2xx responses."""
 
+    #: Response body is elided past this many characters in the exception
+    #: message (and therefore in repr, logs and checkpoints). The .body
+    #: attribute is never truncated.
+    MESSAGE_BODY_LIMIT = 300
+
     def __init__(self, status_code: int, body: str, method: str, path: str):
         self.status_code = status_code
         self.body = body
         self.method = method
         self.path = path
-        super().__init__(f"{method} {path} returned {status_code}: {body}")
+        shown = body
+        if len(shown) > self.MESSAGE_BODY_LIMIT:
+            shown = shown[: self.MESSAGE_BODY_LIMIT] + f"... [truncated, {len(body)} chars total]"
+        super().__init__(f"{method} {path} returned {status_code}: {shown}")
+
+    def __reduce__(self):
+        # Exception.__reduce__ would rebuild via cls(*self.args), and args holds
+        # only the one formatted message -- unpickling would TypeError on the
+        # three missing positional arguments. Rebuild from the full attributes
+        # instead, so .body survives a round trip intact.
+        return (type(self), (self.status_code, self.body, self.method, self.path))
 
 
 class BaseClient:
@@ -1230,12 +1275,27 @@ from typing import Any, Optional
 class APIError(Exception):
     """Raised on non-2xx responses."""
 
+    #: Response body is elided past this many characters in the exception
+    #: message (and therefore in repr, logs and checkpoints). The .body
+    #: attribute is never truncated.
+    MESSAGE_BODY_LIMIT = 300
+
     def __init__(self, status_code: int, body: str, method: str, path: str):
         self.status_code = status_code
         self.body = body
         self.method = method
         self.path = path
-        super().__init__(f"{method} {path} returned {status_code}: {body}")
+        shown = body
+        if len(shown) > self.MESSAGE_BODY_LIMIT:
+            shown = shown[: self.MESSAGE_BODY_LIMIT] + f"... [truncated, {len(body)} chars total]"
+        super().__init__(f"{method} {path} returned {status_code}: {shown}")
+
+    def __reduce__(self):
+        # Exception.__reduce__ would rebuild via cls(*self.args), and args holds
+        # only the one formatted message -- unpickling would TypeError on the
+        # three missing positional arguments. Rebuild from the full attributes
+        # instead, so .body survives a round trip intact.
+        return (type(self), (self.status_code, self.body, self.method, self.path))
 
 
 class BaseClient:
